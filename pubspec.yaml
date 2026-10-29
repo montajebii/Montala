@@ -1,0 +1,49 @@
+name: montala
+description: "مُنتَلا — سود و زیان فرضی دارایی‌ها بر پایه تاریخ"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  path: ^1.9.0
+  sqflite: ^2.3.3+1
+  # Used by the desktop (Windows/Linux) database factory: SQLite via FFI.
+  sqflite_common_ffi: ^2.3.3
+  shared_preferences: ^2.3.2
+
+dependency_overrides:
+  # Pin the Android implementations that use platform channels. The newer
+  # releases pull in `jni`, which compiles native code and therefore requires a
+  # full NDK + CMake toolchain — irrelevant for this app, which needs neither.
+  shared_preferences_android: 2.3.0
+  # 2.4.5 references Build.VERSION_CODES.BAKLAVA and Thread.threadId(), which
+  # only exist in the real Android 36 android.jar. 2.4.0 avoids both.
+  sqflite_android: 2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/
+    - assets/fonts/
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700

@@ -1,0 +1,38 @@
+name: Sync seed data
+
+# Weekly refresh of the bundled seed datasets from the tgju-asset-history
+# engine repo. A commit here triggers the Pages workflow, so the web app
+# always boots with reasonably fresh data even without a manual sync.
+
+on:
+  schedule:
+    - cron: "0 6 * * 6" # Saturdays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-data
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull datasets from the engine repo
+        run: python3 tools/sync_app_assets.py --remote https://raw.githubusercontent.com/montajebii/tgju-asset-history/main/data
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/data/
+          if git diff --cached --quiet; then
+            echo "Bundled data already current."
+          else
+            git commit -m "data: refresh bundled seed datasets from tgju-asset-history"
+            git push
+          fi

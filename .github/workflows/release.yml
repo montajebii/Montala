@@ -1,0 +1,122 @@
+name: Release
+
+# Tag v* -> builds every platform and attaches the artifacts to a GitHub
+# release: web zip, Linux tar.gz + AppImage, per-ABI Android APKs and the
+# Windows Inno Setup installer.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, flutter-version: 3.47.8, cache: true}
+      - run: flutter pub get
+      - run: flutter build web --release
+      - name: Zip site
+        run: |
+          rm -f build/web/sqlite3.wasm build/web/sqflite_sw.js
+          cd build/web && zip -qr "${{ github.workspace }}/montala-web.zip" .
+      - uses: actions/upload-artifact@v4
+        with: {name: web, path: montala-web.zip}
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, flutter-version: 3.47.8, cache: true}
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang cmake ninja-build libgtk-3-dev pkg-config
+      - run: flutter pub get
+      - run: flutter config --enable-linux-desktop
+      - run: flutter build linux --release
+      - name: Package tar.gz and AppImage
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp packaging/linux/montala.desktop build/linux/x64/release/bundle/
+          tar czf "montala-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release bundle
+          # AppImage is best-effort: if appimagetool download fails, the tar.gz still ships.
+          chmod +x packaging/linux/build_appimage.sh tools/build_all.sh || true
+          VERSION="$VERSION" ./packaging/linux/build_appimage.sh \
+            || echo "::warning::AppImage build skipped"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            montala-*-linux-x64.tar.gz
+            dist/Montala-*-x86_64.AppImage
+          if-no-files-found: warn
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21"}
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, flutter-version: 3.47.8, cache: true}
+      - run: flutter pub get
+      # Debug-signed on purpose (documented in android/app/build.gradle.kts);
+      # swap in a keystore from secrets before a public store release.
+      - run: flutter build apk --release --split-per-abi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: build/app/outputs/flutter-apk/*-release.apk
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, flutter-version: 3.47.8, cache: true}
+      - run: flutter pub get
+      - run: flutter config --enable-windows-desktop
+      - run: flutter build windows --release
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+        shell: pwsh
+      - name: Build installer
+        run: |
+          $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          iscc packaging\windows\montala.iss
+        shell: pwsh
+      - name: Sanity-check bundled SQLite
+        run: |
+          if (-not (Test-Path "build\windows\x64\runner\Release\sqlite3.dll")) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "WARNING: sqlite3.dll missing from the Windows bundle"
+            Write-Host "::warning::sqlite3.dll missing from the Windows bundle"
+          } else { Write-Host "sqlite3.dll bundled OK" }
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/Montala-*-windows-x64-setup.exe
+          if-no-files-found: warn
+
+  publish:
+    needs: [web, linux, android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: artifacts}
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir upload
+          find artifacts -type f | while read -r f; do cp "$f" upload/; done
+          ls -lh upload
+          gh release create "$GITHUB_REF_NAME" upload/* \
+            --generate-notes \
+            --title "مُنتَلا $GITHUB_REF_NAME"

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=مُنتَلا
+Name[en]=Montala
+GenericName=سود و زیان فرضی دارایی‌ها
+Comment=محاسبه سود یا زیان فرضی خرید دارایی در گذشته
+Comment[en]=What-if profit/loss of buying an asset in the past
+Exec=montala
+Icon=montala
+Terminal=false
+Categories=Finance;Office;
+Keywords=gold;dollar;coin;price;طلا;دلار;سکه;قیمت;
+StartupWMClass=ir.montala.montala
+StartupNotify=true

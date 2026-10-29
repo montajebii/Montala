@@ -1,0 +1,27 @@
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+android/local.properties
+android/.gradle/
+android/key.properties
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+
+# Web SQLite shims: only needed if the web backend ever reverts to SQLite
+web/sqlite3.wasm
+web/sqflite_sw.js
+
+# Build intermediates
+dist/Montala.AppDir/
+.cache/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.log

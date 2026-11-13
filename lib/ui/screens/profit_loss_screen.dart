@@ -1,4 +1,7 @@
-/// Home screen: the query form plus the ranked results.
+/// Hypothetical profit/loss tool: the query form plus the ranked results.
+///
+/// Opened from the launcher's tool grid; the price-refresh button lives on
+/// the launcher, but a stale dataset still auto-updates before calculating.
 library;
 
 import 'package:flutter/material.dart';
@@ -6,32 +9,26 @@ import 'package:flutter/material.dart';
 import '../../core/calc/calculator.dart';
 import '../../core/models.dart';
 import '../../core/util/format.dart';
-import '../../core/util/jalali.dart';
 import '../../core/util/jalali_picker.dart';
 import '../app_scope.dart';
 import '../theme.dart';
 import '../widgets/amount_field.dart';
 import '../widgets/common.dart';
 import '../widgets/result_list.dart';
-import 'about_screen.dart';
-import 'settings_screen.dart';
-import 'valuation_screen.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class ProfitLossScreen extends StatefulWidget {
+  const ProfitLossScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<ProfitLossScreen> createState() => _ProfitLossScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _ProfitLossScreenState extends State<ProfitLossScreen> {
   final _amountController = TextEditingController();
   DateTime _buyDate = DateTime.now().subtract(const Duration(days: 365));
   DateTime _sellDate = DateTime.now();
   PortfolioResult? _result;
   bool _calculating = false;
-  bool _updating = false;
-  String? _updateNote;
 
   @override
   void initState() {
@@ -88,7 +85,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Auto-update before calculating when the cached data is stale.
     if (settings.autoUpdate && settings.isStale()) {
-      await _runUpdate(quiet: true);
+      try {
+        await scope.refreshData();
+      } catch (_) {
+        // Quiet: fall back to the stored data, the calculation still runs.
+      }
     }
 
     final result = scope.calculator.run(
@@ -108,30 +109,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _runUpdate({bool quiet = false}) async {
-    final scope = AppScope.of(context);
-    setState(() {
-      _updating = true;
-      _updateNote = null;
-    });
-    try {
-      await scope.refreshData();
-      if (!mounted) return;
-      setState(() {
-        _updating = false;
-        _updateNote = 'قیمت‌ها به‌روزرسانی شد — ${formatJalaliLong(DateTime.now())}';
-      });
-      if (!quiet) _snack('به‌روزرسانی انجام شد.');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _updating = false;
-        _updateNote = 'به‌روزرسانی ناموفق بود؛ از داده‌های ذخیره‌شده استفاده می‌شود.';
-      });
-      if (!quiet) _snack('به‌روزرسانی ناموفق بود: $e');
-    }
-  }
-
   void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -141,50 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Row(
-          children: [
-            Text('مُنتَلا'),
-            SizedBox(width: 8),
-            Chip3d('سود و زیان فرضی', background: MontalaColors.goldSoft,
-                foreground: MontalaColors.gold),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _updating ? null : () => _runUpdate(),
-            tooltip: 'به‌روزرسانی قیمت‌ها',
-            icon: _updating
-                ? const SizedBox(
-                    width: 17,
-                    height: 17,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh, size: 21),
-          ),
-          IconButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ValuationScreen()),
-            ),
-            tooltip: 'ارزش سبد در یک تاریخ',
-            icon: const Icon(Icons.account_balance_wallet_outlined, size: 21),
-          ),
-          IconButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-            tooltip: 'تنظیمات',
-            icon: const Icon(Icons.tune, size: 21),
-          ),
-          IconButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AboutScreen()),
-            ),
-            tooltip: 'درباره',
-            icon: const Icon(Icons.info_outline, size: 21),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('سود و زیان فرضی')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -192,29 +126,6 @@ class _HomeScreenState extends State<HomeScreen> {
             child: CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(child: _buildForm(context)),
-                if (_updateNote != null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                          Space.l, 0, Space.l, Space.s),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.cloud_done_outlined,
-                              size: 13, color: MontalaColors.inkMuted),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(
-                              _updateNote!,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: MontalaColors.inkMuted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 if (_result != null)
                   SliverToBoxAdapter(
                     child: ResultList(result: _result!, amountRial: _amountRial),

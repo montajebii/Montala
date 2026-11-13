@@ -1,6 +1,7 @@
 /// Headless smoke test: boots the real app against the real CSVs and drives
-/// the form, so failures in the seed import, the calculation pipeline and the
-/// widget tree surface in CI rather than only on a developer's desktop.
+/// the launcher and the tools, so failures in the seed import, the calculation
+/// pipeline and the widget tree surface in CI rather than only on a
+/// developer's desktop.
 ///
 /// Real disk/SQLite work must run through `tester.runAsync`, because
 /// `testWidgets` executes inside a fake-async zone where those futures never
@@ -97,6 +98,14 @@ void main() {
         refreshData: () async {},
       ),
     );
+    await tester.pumpAndSettle();
+
+    // The launcher shows one tile per tool.
+    expect(find.text('سود و زیان فرضی'), findsOneWidget);
+    expect(find.text('ارزش سبد در یک تاریخ'), findsOneWidget);
+
+    // Enter the profit/loss tool through its tile.
+    await tester.tap(find.text('سود و زیان فرضی'));
     await tester.pumpAndSettle();
 
     expect(find.text('مبلغ سرمایه‌گذاری'), findsOneWidget);

@@ -21,7 +21,7 @@ import 'core/net/updater.dart';
 import 'core/settings/settings.dart';
 import 'core/symbols.dart';
 import 'ui/app_scope.dart';
-import 'ui/screens/home_screen.dart';
+import 'ui/screens/launcher_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -117,7 +117,7 @@ class MontalaApp extends StatelessWidget {
                 child: child ?? const SizedBox.shrink(),
               );
             },
-            home: const HomeScreen(),
+            home: const LauncherScreen(),
           );
         },
       ),

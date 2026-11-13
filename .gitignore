@@ -17,11 +17,15 @@ web/sqlite3.wasm
 web/sqflite_sw.js
 
 # Build intermediates
-dist/Montala.AppDir/
+dist/
 .cache/
 
 # Editors / OS
 .idea/
 .vscode/
+.zcode/
 .DS_Store
 *.log
+
+# FVM Version Cache
+.fvm/

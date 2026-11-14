@@ -1,7 +1,7 @@
 name: montala
-description: "مُنتَلا — سود و زیان فرضی دارایی‌ها بر پایه تاریخ"
+description: "مُنتَلا — جعبه‌ابزار دارایی‌های ایرانی: سود و زیان فرضی، ارزش سبد، تابلو زنده و ارزش دارایی شخصی"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -18,6 +18,8 @@ dependencies:
   # Used by the desktop (Windows/Linux) database factory: SQLite via FFI.
   sqflite_common_ffi: ^2.3.3
   shared_preferences: ^2.3.2
+  html: ^0.15.7
+  file_picker: ^13.3.3
 
 dependency_overrides:
   # Pin the Android implementations that use platform channels. The newer

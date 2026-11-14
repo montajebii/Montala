@@ -19,7 +19,9 @@ import 'package:montala/core/db/importer.dart';
 import 'package:montala/core/models.dart';
 import 'package:montala/core/settings/settings.dart';
 import 'package:montala/core/symbols.dart';
+import 'package:montala/core/portfolio/portfolio_store_web_io.dart';
 import 'package:montala/main.dart';
+import 'package:montala/ui/screens/networth_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -136,6 +138,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('سرمایه اولیه'), findsOneWidget);
     expect(find.text('ارزش نهایی'), findsOneWidget);
+  });
+
+  testWidgets('net worth tool renders its tabs on a fresh store',
+      (tester) async {
+    tester.view.physicalSize = const Size(1100, 1900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({});
+    final settings = Settings();
+    await settings.load();
+
+    await tester.pumpWidget(
+      MontalaApp(
+        settings: settings,
+        calculator: Calculator(history),
+        refreshData: () async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The toolbox shows all four tiles.
+    expect(find.text('سود و زیان فرضی'), findsOneWidget);
+    expect(find.text('ارزش سبد در یک تاریخ'), findsOneWidget);
+    expect(find.text('تابلو زنده'), findsOneWidget);
+    expect(find.text('ارزش دارایی من'), findsOneWidget);
+
+    // Push the tool with a fast in-memory store (the platform store's real
+    // SQLite IO cannot progress under the fake-async test zone); navigation
+    // mechanics are covered by the profit/loss flow above.
+    final context = tester.element(find.text('ارزش دارایی من'));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            NetWorthScreen(storeOverride: PrefsPortfolioStore()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Empty state on a fresh store — no crash, guidance shown.
+    expect(find.textContaining('هنوز دارایی‌ای ثبت نشده'), findsOneWidget);
+
+    // The tabs render.
+    await tester.tap(find.text('تراکنش‌ها'));
+    await tester.pumpAndSettle();
+    expect(find.text('هیچ تراکنشی ثبت نشده است.'), findsOneWidget);
+    expect(find.text('تراکنش جدید'), findsWidgets);
   });
 
   testWidgets('settings screen renders and the Toman toggle persists',

@@ -65,6 +65,10 @@ class Calculator {
 
   Calculator(this._history);
 
+  /// The full price archive backing this calculator — shared with tools that
+  /// value portfolios (ارزش دارایی من) without re-reading the database.
+  Map<String, List<PriceRow>> get history => _history;
+
   List<PriceRow> historyFor(String symbolId) => _history[symbolId] ?? const [];
 
   /// All results for [input], sorted best profit percent first.

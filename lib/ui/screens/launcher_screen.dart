@@ -12,6 +12,8 @@ import '../app_scope.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'about_screen.dart';
+import 'live_board_screen.dart';
+import 'networth_screen.dart';
 import 'profit_loss_screen.dart';
 import 'settings_screen.dart';
 import 'valuation_screen.dart';
@@ -162,11 +164,25 @@ const List<_ToolEntry> _tools = [
     'ارزش سبد در یک تاریخ',
     _buildValuation,
   ),
+  _ToolEntry(
+    Icons.monitor_heart,
+    'تابلو زنده',
+    _buildLiveBoard,
+  ),
+  _ToolEntry(
+    Icons.savings_outlined,
+    'ارزش دارایی من',
+    _buildNetWorth,
+  ),
 ];
 
 Widget _buildProfitLoss(BuildContext context) => const ProfitLossScreen();
 
 Widget _buildValuation(BuildContext context) => const ValuationScreen();
+
+Widget _buildLiveBoard(BuildContext context) => const LiveBoardScreen();
+
+Widget _buildNetWorth(BuildContext context) => const NetWorthScreen();
 
 class _ToolGrid extends StatelessWidget {
   const _ToolGrid();

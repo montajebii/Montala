@@ -111,11 +111,20 @@ jobs:
           "$APKSIGNER" verify --print-certs "$APK"
           cert=$(keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
           echo "AAB SHA-256: $cert"
-          actual=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          # apksigner prefixes this line with "Signer #1" on some build-tools
+          # versions and "V2 Signer"/"V3 Signer" on others; match any prefix.
+          actual=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          aab_actual=$(printf '%s' "$cert" | tr -d ':' | tr 'A-F' 'a-f')
           expected=$(printf '%s' "${ANDROID_CERT_SHA256:-}" | tr -d ':' | tr 'A-F' 'a-f')
-          if [ -n "$expected" ] && [ "$actual" != "$expected" ]; then
-            echo "::error::APK certificate does not match ANDROID_CERT_SHA256"
-            exit 1
+          if [ -n "$expected" ]; then
+            if [ -z "$actual" ] || [ -z "$aab_actual" ]; then
+              echo "::error::Could not read the APK/AAB certificate digest"
+              exit 1
+            fi
+            if [ "$actual" != "$expected" ] || [ "$aab_actual" != "$expected" ]; then
+              echo "::error::APK/AAB certificate does not match ANDROID_CERT_SHA256"
+              exit 1
+            fi
           fi
 
       - name: Name artefacts with the release version

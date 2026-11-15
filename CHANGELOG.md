@@ -18,6 +18,11 @@ Release rules (see `docs/RELEASING.md`):
 
 ## [Unreleased]
 
+### Changed
+
+- Bundled price history for the half-coin, quarter-coin and full-coin series
+  extended through 2026-11-12 by the automated data sync.
+
 ## [1.2.0] - 2026-11-16
 
 ### Added

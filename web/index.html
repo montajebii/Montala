@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png"/>
   <title>مُنتَلا</title>
   <link rel="manifest" href="manifest.json">
   <style>
@@ -34,11 +34,7 @@
     #loading .mark {
       width: 62px; height: 62px;
       border-radius: 18px;
-      background: #0F766E;
-      color: #fff;
-      display: grid; place-items: center;
-      font-size: 26px; font-weight: 700;
-      letter-spacing: 0.5px;
+      object-fit: cover;
       box-shadow: 0 8px 22px rgba(15,118,110,0.26);
     }
     #loading .name { font-size: 20px; font-weight: 700; color: #1E2321; }
@@ -56,7 +52,7 @@
 </head>
 <body>
   <div id="loading">
-    <div class="mark">م</div>
+    <img class="mark" src="icons/Icon-192.png" alt="">
     <div class="name">مُنتَلا</div>
     <div class="sub">در حال آماده‌سازی داده‌ها…</div>
     <div class="spinner"></div>

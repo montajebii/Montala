@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1080 1080">
+  <defs>
+    <style>
+      .cls-1{fill:#0f766e}
+      .cls-2{fill:#c08a2e;stroke:#000000;stroke-width:15;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+  <title>Artboard 17</title>
+  <g id="Layer_5" data-name="Layer 5">
+  </g>
+  <g id="Layer_17" data-name="Layer 17">
+  </g>
+  <g id="Layer_18" data-name="Layer 18">
+    <g>
+      <rect x="0" y="0" width="1080" height="1080" class="cls-1"/>
+      <rect x="120" y="120" width="120" height="120" class="cls-2"/>
+      <rect x="360" y="600" width="120" height="120" class="cls-2"/>
+      <rect x="600" y="600" width="120" height="120" class="cls-2"/>
+      <polygon points="480,480 120,480 120,360 360,360 360,120 480,120" class="cls-2"/>
+      <path d="M600 300 L600 300 C600 200.589 680.589 120 780 120 L780 120 C879.411 120 960 200.589 960 300 L960 300 C960 399.411 879.411 480 780 480 L780 480 C680.589 480 600 399.411 600 300 Z M720 240 L720 360 L840 360 L840 240 Z" class="cls-2"/>
+      <polygon points="120,600 240,600 240,840 840,840 840,600 960,600 960,960 120,960" class="cls-2"/>
+    </g>
+  </g>
+  <g id="Layer_1" data-name="Layer 1">
+  </g>
+  <g id="Layer_4" data-name="Layer 4">
+  </g>
+  <g id="Layer_6" data-name="Layer 6">
+  </g>
+  <g id="Layer_7" data-name="Layer 7">
+  </g>
+  <g id="Layer_8" data-name="Layer 8">
+  </g>
+  <g id="Layer_9" data-name="Layer 9">
+  </g>
+  <g id="Layer_10" data-name="Layer 10">
+  </g>
+  <g id="Layer_11" data-name="Layer 11">
+  </g>
+  <g id="Layer_12" data-name="Layer 12">
+  </g>
+  <g id="Layer_13" data-name="Layer 13">
+  </g>
+  <g id="Layer_14" data-name="Layer 14">
+  </g>
+  <g id="Layer_15" data-name="Layer 15">
+  </g>
+  <g id="Layer_16" data-name="Layer 16">
+  </g>
+  <g id="Layer_3" data-name="Layer 3">
+  </g>
+  <g id="Layer_2" data-name="Layer 2">
+  </g>
+</svg>

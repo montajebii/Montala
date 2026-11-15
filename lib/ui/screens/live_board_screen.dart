@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/net/live_quotes.dart';
 import '../../core/util/format.dart';
+import '../app_scope.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -142,20 +143,41 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     }
   }
 
-  String _fmtCell(LiveCell cell) {
-    final v = cell.value;
-    if (v == null) return '—';
-    final grouped = toPersianDigits(groupThousands(v.round()));
-    return cell.isUsd ? '\$$grouped' : grouped;
-  }
+
 
   @override
   Widget build(BuildContext context) {
     final showEstjt = !kIsWeb;
+    final inToman = AppScope.of(context).settings.inToman;
     return Scaffold(
       appBar: AppBar(
         title: const Text('تابلو زنده'),
         actions: [
+          IconButton(
+            tooltip: 'درباره این ابزار',
+            icon: const Icon(Icons.info_outline, size: 21),
+            onPressed: () => showToolInfo(
+              context,
+              icon: Icons.monitor_heart,
+              iconColor: MontalaColors.gold,
+              title: 'تابلو زنده',
+              paragraphs: const [
+                'قیمت لحظه‌ای سیزده دارایی (سکه‌ها، طلای ۱۸ و ۲۴، مثقال، انس '
+                    'جهانی، آبشده و نقره) را در دو ستون کنار هم از دو منبع '
+                    'نشان می‌دهد: estjt و tgju — تا اختلاف منابع دیده شود.',
+                'درصد زیر هر عدد، تغییر نسبت به رفرش قبلی است (سبز ▲، قرمز '
+                    '▼). صفحه هر ۶۰ ثانیه خودش به‌روزرسانی می‌کند و با دکمه '
+                    'پایین‌کشیدن هم می‌توانید فوری تازه کنید.',
+                'واحد هر عدد کنارش نوشته شده و با تنظیم «نمایش مبلغ به '
+                    'تومان» بین تومان و ریال جابه‌جا می‌شود؛ انس جهانی همیشه '
+                    'دلاری است.',
+                'در قطعی شبکه، آخرین مقادیر با رنگ کم‌رنگ می‌مانند و بار '
+                    'کش/قطع بالا صفحه دیده می‌شود. ستون estjt فقط روی نسخه‌های '
+                    'بومی (اندروید/ویندوز/لینوکس) کار می‌کند — آن سایت هدر '
+                    'CORS ندارد و نسخه وب فقط tgju را نشان می‌دهد.',
+              ],
+            ),
+          ),
           IconButton(
             onPressed: _busy ? null : _refresh,
             tooltip: 'به‌روزرسانی',
@@ -174,7 +196,7 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
           children: [
             _statusStrip(showEstjt),
             if (kIsWeb) _webNotice(),
-            Expanded(child: _board(showEstjt)),
+            Expanded(child: _board(showEstjt, inToman)),
           ],
         ),
       ),
@@ -255,7 +277,7 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     );
   }
 
-  Widget _board(bool showEstjt) {
+  Widget _board(bool showEstjt, bool inToman) {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640),
@@ -270,7 +292,7 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
                   itemCount: kLiveBoardRows.length,
                   itemBuilder: (context, index) {
                     final row = kLiveBoardRows[index];
-                    return _boardRow(row, showEstjt, index);
+                    return _boardRow(row, showEstjt, inToman, index);
                   },
                 ),
               ),
@@ -333,7 +355,8 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     );
   }
 
-  Widget _boardRow(LiveBoardRow row, bool showEstjt, int index) {
+  Widget _boardRow(LiveBoardRow row, bool showEstjt, bool inToman,
+      int index) {
     return Column(
       children: [
         if (index > 0) const Divider(height: 1),
@@ -354,12 +377,13 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
                 Expanded(
                   flex: 3,
                   child: _cell(_estjtCells[row.key], _estjtDelta[row.key],
-                      _estjtStale),
+                      _estjtStale, inToman),
                 ),
               Expanded(
                 flex: 3,
-                child:
-                    _cell(_tgjuCells[row.key], _tgjuDelta[row.key], _tgjuStale),
+                child: _cell(
+                    _tgjuCells[row.key], _tgjuDelta[row.key], _tgjuStale,
+                    inToman),
               ),
             ],
           ),
@@ -368,21 +392,43 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     );
   }
 
-  Widget _cell(LiveCell? cell, double? delta, bool stale) {
+  Widget _cell(LiveCell? cell, double? delta, bool stale, bool inToman) {
+    final (:value, :unit) = formatLiveCell(
+      cell ?? const LiveCell(),
+      inToman,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          cell == null ? '—' : _fmtCell(cell),
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: cell == null || cell.value == null
-                ? MontalaColors.inkMuted
-                : stale
-                    ? MontalaColors.inkMuted
-                    : MontalaColors.ink,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Flexible(
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: cell == null || cell.value == null
+                      ? MontalaColors.inkMuted
+                      : stale
+                          ? MontalaColors.inkMuted
+                          : MontalaColors.ink,
+                ),
+              ),
+            ),
+            if (unit.isNotEmpty) ...[
+              const SizedBox(width: 3),
+              Text(
+                unit,
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: MontalaColors.inkMuted,
+                ),
+              ),
+            ],
+          ],
         ),
         DeltaText(delta, fontSize: 10.5),
       ],

@@ -381,3 +381,73 @@ class SymbolRowLeading extends StatelessWidget {
     );
   }
 }
+
+/// The AppBar «info» action of a tool screen: opens a bottom sheet that
+/// explains what the tool does and how to use it.
+Future<void> showToolInfo(
+  BuildContext context, {
+  required IconData icon,
+  required Color iconColor,
+  required String title,
+  required List<String> paragraphs,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xl)),
+    ),
+    builder: (context) => Padding(
+      padding: EdgeInsets.fromLTRB(
+          Space.l, Space.s, Space.l, Space.xl + MediaQuery.paddingOf(context).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(Radii.md),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 22, color: iconColor),
+              ),
+              const SizedBox(width: Space.m),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.m),
+          for (final p in paragraphs) ...[
+            Text(
+              p,
+              style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.9,
+                color: MontalaColors.ink,
+              ),
+            ),
+            const SizedBox(height: Space.s),
+          ],
+          const SizedBox(height: Space.xs),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('متوجه شدم'),
+          ),
+        ],
+      ),
+    ),
+  );
+}

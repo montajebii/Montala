@@ -7,7 +7,17 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import '../symbols.dart';
 import 'portfolio_models.dart';
+
+/// m0ntIsRich's asset names → Montala symbol ids, so files straight from the
+/// Python tool import without conversion.
+const Map<String, String> kAssetIdAliases = {
+  'shemsh24': 'gold24',
+  'shemsh18': 'gold18',
+  'geram24': 'gold24',
+  'geram18': 'gold18',
+};
 
 const String kPortfolioCsvHeader =
     'date,asset,type,units,unit_price_toman,note';
@@ -58,9 +68,13 @@ CsvParseResult parseTxsCsv(String csv) {
       errors.add('خط $lineNo: تاریخ نامعتبر «${fields[0]}»');
       continue;
     }
-    final asset = fields[1];
+    final asset = kAssetIdAliases[fields[1].trim()] ?? fields[1].trim();
     if (asset.isEmpty) {
       errors.add('خط $lineNo: نماد دارایی خالی است');
+      continue;
+    }
+    if (!kSymbols.any((s) => s.id == asset)) {
+      errors.add('خط $lineNo: نماد ناشناخته «${fields[1]}»');
       continue;
     }
     final type = fields[2].toUpperCase();

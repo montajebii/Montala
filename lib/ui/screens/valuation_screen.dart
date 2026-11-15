@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/calc/calculator.dart';
 import '../../core/calc/valuation.dart';
 import '../../core/models.dart';
 import '../../core/symbols.dart';
@@ -29,9 +30,11 @@ class ValuationScreen extends StatefulWidget {
 
 class _ValuationScreenState extends State<ValuationScreen> {
   late final Map<String, TextEditingController> _quantityControllers;
+  final GlobalKey _resultKey = GlobalKey();
   DateTime _date = DateTime.now();
   ValuationResult? _result;
   bool _calculating = false;
+  bool _resultHighlighted = false;
 
   @override
   void initState() {
@@ -62,10 +65,12 @@ class _ValuationScreenState extends State<ValuationScreen> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+    final scope = AppScope.of(context);
     final picked = await showJalaliDatePicker(
       context,
       initialDate: _date,
-      firstDate: DateTime(2005, 1, 1),
+      // Floor the calendar at the oldest data any of the eight series has.
+      firstDate: earliestDataDate(scope.calculator.history),
       lastDate: DateTime(now.year, now.month, now.day),
       title: 'تاریخ ارزش‌گذاری',
     );
@@ -107,6 +112,23 @@ class _ValuationScreenState extends State<ValuationScreen> {
     setState(() {
       _result = result;
       _calculating = false;
+      _resultHighlighted = true;
+    });
+    // Bring the result into view — it used to appear off-screen below the
+    // form and users missed it — then flash its border once.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final resultContext = _resultKey.currentContext;
+      if (resultContext != null) {
+        await Scrollable.ensureVisible(
+          resultContext,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeOutCubic,
+          alignment: 0.12,
+        );
+      }
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      if (mounted) setState(() => _resultHighlighted = false);
     });
   }
 
@@ -166,7 +188,34 @@ class _ValuationScreenState extends State<ValuationScreen> {
     final settings = AppScope.of(context).settings;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('ارزش سبد در یک تاریخ')),
+      appBar: AppBar(
+        title: const Text('ارزش سبد در یک تاریخ'),
+        actions: [
+          IconButton(
+            tooltip: 'درباره این ابزار',
+            icon: const Icon(Icons.info_outline, size: 21),
+            onPressed: () => showToolInfo(
+              context,
+              icon: Icons.account_balance_wallet_outlined,
+              iconColor: MontalaColors.brand,
+              title: 'ارزش سبد در یک تاریخ',
+              paragraphs: const [
+                'تعداد دارایی‌هایی که در یک تاریخ مشخص داشته‌اید را وارد کنید '
+                    'تا ارزش ریالی یا تومانی همان روز محاسبه شود؛ تعداد '
+                    'اعشاری مجاز است.',
+                'کاربرد رایج آن محاسبه مبلغ مهریه‌ی اجرا گذاشته شده است: '
+                    'تاریخ ازدواج و مقادیر سکه/طلا را وارد کنید و نتیجه را با '
+                    'یک دکمه برای اسناد کپی کنید.',
+                'برای تاریخ‌های تعطیل، نزدیک‌ترین روز معاملاتیِ قبل به‌عنوان '
+                    'مبنا گرفته می‌شود و مبنای قیمت (Open یا Close) از '
+                    'تنظیمات پیروی می‌کند.',
+                'این عدد بر پایه داده بازار است؛ نرخ رسمی کارشناس دادگاه '
+                    'ممکن است متفاوت باشد.',
+              ],
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -225,14 +274,28 @@ class _ValuationScreenState extends State<ValuationScreen> {
                 ),
                 if (_result != null)
                   SliverToBoxAdapter(
+                    key: _resultKey,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: Space.l, vertical: Space.s),
+                      child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeOut,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(Radii.lg),
+                        border: Border.all(
+                          color: _resultHighlighted
+                              ? MontalaColors.gold
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
                       child: _ResultCard(
                         result: _result!,
                         inToman: settings.inToman,
                         basis: settings.basis,
                         onCopy: _copyResult,
+                      ),
                       ),
                     ),
                   ),

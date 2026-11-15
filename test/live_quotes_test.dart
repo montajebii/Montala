@@ -59,12 +59,16 @@ void main() {
           <span class="tt-price-card__value is-up">253,700,000</span>
         </div>
         <div class="tt-price-card">
-          <span class="tt-price-card__label">طلا ۱۸ عیار</span>
+          <span class="tt-price-card__label">طلای ۱۸ عیار</span>
           <span class="tt-price-card__value is-down">24,989,700</span>
         </div>
         <div class="tt-price-card">
           <span class="tt-price-card__label">انس جهانی طلا</span>
           <span class="tt-price-card__value">\$3,875</span>
+        </div>
+        <div class="tt-price-card">
+          <span class="tt-price-card__label">طلا ۲۴ عیار</span>
+          <span class="tt-price-card__value is-up">33,000,000</span>
         </div>
       </div>
       <div class="tt-tv__updated-floating">
@@ -79,6 +83,8 @@ void main() {
       expect(snap.cells['sekee']?.value, 253700000);
       expect(snap.cells['sekee']?.isUsd, isFalse);
       expect(snap.cells['gold18']?.value, 24989700);
+      // The historical spelling «طلا ۲۴ عیار» still maps via the alias table.
+      expect(snap.cells['gold24']?.value, 33000000);
       // World ounce keeps its dollar flag and skips the Toman path.
       expect(snap.cells['gold_ons']?.value, 3875);
       expect(snap.cells['gold_ons']?.isUsd, isTrue);
@@ -132,6 +138,35 @@ void main() {
       expect(changePct(null, 100), isNull);
       expect(changePct(100, null), isNull);
       expect(changePct(0, 5), isNull);
+    });
+  });
+
+  group('formatLiveCell (unit display + Toman/Rial toggle)', () {
+    test('dollar cells always show دلار', () {
+      final (:value, :unit) =
+          formatLiveCell(const LiveCell(value: 3883, isUsd: true), true);
+      expect(value, contains('۳٬۸۸۳'));
+      expect(unit, 'دلار');
+    });
+
+    test('toman mode keeps stored value', () {
+      final (:value, :unit) =
+          formatLiveCell(const LiveCell(value: 37000000), true);
+      expect(unit, 'تومان');
+      expect(value, contains('۳۷٬۰۰۰٬۰۰۰'));
+    });
+
+    test('rial mode multiplies by ten and relabels', () {
+      final (:value, :unit) =
+          formatLiveCell(const LiveCell(value: 37000000), false);
+      expect(unit, 'ریال');
+      expect(value, contains('۳۷۰٬۰۰۰٬۰۰۰'));
+    });
+
+    test('empty cell renders a dash with no unit', () {
+      final (:value, :unit) = formatLiveCell(const LiveCell(), true);
+      expect(value, '—');
+      expect(unit, isEmpty);
     });
   });
 }

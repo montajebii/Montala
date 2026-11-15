@@ -17,6 +17,8 @@ library;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+
+import '../util/format.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
@@ -113,7 +115,7 @@ const List<LiveBoardRow> kLiveBoardRows = [
   LiveBoardRow(
     key: 'gold24',
     labelFa: 'طلای ۲۴ عیار',
-    estjtLabel: 'طلا ۲۴ عیار',
+    estjtLabel: 'طلای ۲۴ عیار',
     tgjuSlug: 'geram24',
     minToman: 1000000,
     maxToman: 50000000,
@@ -121,7 +123,7 @@ const List<LiveBoardRow> kLiveBoardRows = [
   LiveBoardRow(
     key: 'gold18',
     labelFa: 'طلای ۱۸ عیار',
-    estjtLabel: 'طلا ۱۸ عیار',
+    estjtLabel: 'طلای ۱۸ عیار',
     tgjuSlug: 'geram18',
     minToman: 1000000,
     maxToman: 50000000,
@@ -186,10 +188,18 @@ const List<LiveBoardRow> kLiveBoardRows = [
   ),
 ];
 
+/// Historical estjt label spellings → row key (port of `_LABEL_ALIASES`):
+/// the site has drifted between «طلای ۲۴ عیار» and «طلا ۲۴ عیار» before.
+const Map<String, String> kEstjtLabelAliases = {
+  'طلا ۲۴ عیار': 'gold24',
+  'طلا ۱۸ عیار': 'gold18',
+};
+
 /// estjt's raw Persian label → canonical row key.
 final Map<String, String> kEstjtLabelToKey = {
   for (final row in kLiveBoardRows)
     if (row.estjtLabel != null) row.estjtLabel!: row.key,
+  ...kEstjtLabelAliases,
 };
 
 /// Parses a loosely-formatted Persian market number — exact port of
@@ -325,15 +335,19 @@ Future<LiveSnapshot> fetchEstjtLive({http.Client? client}) async {
 }
 
 /// Parses the estjt.ir/tv HTML — port of `_extract_estjt_prices`: the board
-/// lives in `div.tt-tv__prices`, one `div.tt-price-card` per instrument with
-/// a label span and a value span (value class carries up/down modifiers).
+/// is the element carrying the `tt-tv__prices` class (in practice a `<main>`
+/// tag), one `div.tt-price-card` per instrument with a label span and a
+/// value span (value class carries up/down modifiers).
 @visibleForTesting
 LiveSnapshot parseEstjtHtml(String body, {required DateTime fetchedAt}) {
   final doc = html_parser.parse(body);
-  final board =
-      doc.querySelector('main div.tt-tv__prices') ??
-          doc.querySelector('div.tt-tv__prices');
-  if (board == null) {
+  // The live page renders `<main class="tt-tv__prices">` — match by class,
+  // not by tag; when the container is missing entirely, fall back to
+  // searching the whole document for cards.
+  final board = doc.querySelector('.tt-tv__prices');
+  final cardRoot = board ?? doc;
+  final cards = cardRoot.querySelectorAll('div.tt-price-card');
+  if (board == null && cards.isEmpty) {
     throw const FormatException('estjt: board container not found — site '
         'structure may have changed');
   }
@@ -349,7 +363,7 @@ LiveSnapshot parseEstjtHtml(String body, {required DateTime fetchedAt}) {
   }
 
   final cells = <String, LiveCell>{};
-  for (final card in board.querySelectorAll('div.tt-price-card')) {
+  for (final card in cards) {
     final labelSpan = card.querySelector('span.tt-price-card__label');
     if (labelSpan == null) continue;
     final key = kEstjtLabelToKey[labelSpan.text.trim()];
@@ -424,3 +438,25 @@ const Map<String, String> _browserHeaders = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'fa-IR,fa;q=0.9,en;q=0.8',
 };
+
+/// Formats one board cell for display: the grouped Persian-digit value and
+/// the unit that goes next to it. Values are stored in Toman; with
+/// [inToman] off they display ×10 as Rial. Dollar cells (world ounce) are
+/// always labelled دلار.
+({String value, String unit}) formatLiveCell(LiveCell cell, bool inToman) {
+  final v = cell.value;
+  if (v == null) return (value: '—', unit: '');
+  if (cell.isUsd) {
+    return (
+      value: '\$${toPersianDigits(groupThousands(v.round()))}',
+      unit: 'دلار',
+    );
+  }
+  if (inToman) {
+    return (value: toPersianDigits(groupThousands(v.round())), unit: 'تومان');
+  }
+  return (
+    value: toPersianDigits(groupThousands((v * 10).round())),
+    unit: 'ریال',
+  );
+}

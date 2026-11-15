@@ -50,10 +50,13 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> {
 
   Future<void> _pickDate({required bool isBuy}) async {
     final now = DateTime.now();
+    final scope = AppScope.of(context);
     final picked = await showJalaliDatePicker(
       context,
       initialDate: isBuy ? _buyDate : _sellDate,
-      firstDate: DateTime(2005, 1, 1),
+      // The calendar can never show a date before the oldest data of the
+      // assets involved (the earliest of all eight series here).
+      firstDate: earliestDataDate(scope.calculator.history),
       lastDate: DateTime(now.year + 8, 12, 31),
       title: isBuy ? 'تاریخ خرید' : 'تاریخ فروش / مقایسه',
     );
@@ -118,7 +121,34 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('سود و زیان فرضی')),
+      appBar: AppBar(
+        title: const Text('سود و زیان فرضی'),
+        actions: [
+          IconButton(
+            tooltip: 'درباره این ابزار',
+            icon: const Icon(Icons.info_outline, size: 21),
+            onPressed: () => showToolInfo(
+              context,
+              icon: Icons.trending_up,
+              iconColor: MontalaColors.brand,
+              title: 'سود و زیان فرضی',
+              paragraphs: const [
+                'یک مبلغ و دو تاریخ وارد کنید تا ببینید اگر همان روز آن مبلغ '
+                    'را در هر دارایی خریده بودید، امروز چه بود؛ نتیجه برای هر '
+                    'هشت دارایی به‌صورت رتبه‌بندی‌شده می‌آید.',
+                'خروجی هر نماد شامل تعداد واحد قابل خرید، ارزش نهایی، سود یا '
+                    'زیان ریالی و درصدی و نمودار رشد ارزش است؛ با زدن هر ردیف '
+                    'جزئیات و نمودار کندل ۴۰ روز اخیر باز می‌شود.',
+                'تاریخ دوم پیش‌فرض امروز است و می‌تواند آینده باشد — در آن '
+                    'صورت قیمت با تخمین روند محاسبه و علامت‌گذاری می‌شود. '
+                    'مبنای خرید (Open یا Close) در تنظیمات قابل تغییر است.',
+                'داده‌ها از آرشیو tgju.org (۱۳۸۹ تا امروز) می‌آید و پیش از '
+                    'محاسبه در صورت کهنگی به‌روزرسانی می‌شود.',
+              ],
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(

@@ -197,3 +197,23 @@ class Calculator {
     );
   }
 }
+
+/// Earliest recorded price date among [ids] (every symbol in [history] when
+/// null). Date pickers floor their firstDate with this so no date without
+/// data can even be displayed — e.g. gold18 starts ۱۳۹۲/۰۴/۳۱ while most
+/// series begin around ۱۳۸۹.
+DateTime earliestDataDate(
+  Map<String, List<PriceRow>> history, {
+  Set<String>? ids,
+  DateTime? fallback,
+}) {
+  DateTime? earliest;
+  for (final entry in history.entries) {
+    if (ids != null && !ids.contains(entry.key)) continue;
+    final rows = entry.value;
+    if (rows.isEmpty) continue;
+    final first = rows.first.date;
+    if (earliest == null || first.isBefore(earliest)) earliest = first;
+  }
+  return earliest ?? fallback ?? DateTime(2005, 1, 1);
+}

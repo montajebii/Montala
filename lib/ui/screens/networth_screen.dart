@@ -87,6 +87,29 @@ class _NetWorthScreenState extends State<NetWorthScreen>
         title: const Text('ارزش دارایی من'),
         actions: [
           IconButton(
+            tooltip: 'درباره این ابزار',
+            icon: const Icon(Icons.info_outline, size: 21),
+            onPressed: () => showToolInfo(
+              context,
+              icon: Icons.savings_outlined,
+              iconColor: MontalaColors.gold,
+              title: 'ارزش دارایی من',
+              paragraphs: const [
+                'خرید و فروش دارایی‌ها را با تاریخ و قیمت دلخواه ثبت کنید — '
+                    'تاریخ می‌تواند عقب‌تر باشد (پس‌تاریخ) و قیمت پیش‌فرض از '
+                    'دیتابیس همان روز پر می‌شود.',
+                'از روی تراکنش‌ها و دیتابیس قیمت، ارزش کنونی، تاریخچه کامل '
+                    'ارزش، سهم هر دارایی، سود/زیان باز هر دارایی (میانگین '
+                    'خرید) و سود/زیان تحقق‌یافته هر فروش ساخته می‌شود.',
+                'تب تحلیل، میانگین متحرک، نوسان ۳۰ روزه و نقاط غیرعادی سری '
+                    'ارزش را هم نشان می‌دهد. داده فقط روی دستگاه خودتان '
+                    'ذخیره می‌شود.',
+                'تراکنش‌ها با CSV خروجی/ورودی می‌شوند (دکمه‌های بالای صفحه) — '
+                    'برای انتقال بین دستگاه‌ها یا پشتیبان‌گیری.',
+              ],
+            ),
+          ),
+          IconButton(
             tooltip: 'خروجی CSV',
             icon: const Icon(Icons.file_upload_outlined, size: 21),
             onPressed: _loading ? null : _exportCsv,
@@ -842,7 +865,9 @@ class _TxDialogState extends State<_TxDialog> {
     final picked = await showJalaliDatePicker(
       context,
       initialDate: _date,
-      firstDate: DateTime(2005, 1, 1),
+      // Only dates this asset actually has data for are reachable — the
+      // floor moves when the user switches asset in the form.
+      firstDate: earliestDataDate(widget.history, ids: {_assetId}),
       lastDate: DateTime.now().add(const Duration(days: 1)),
       title: 'تاریخ تراکنش',
     );

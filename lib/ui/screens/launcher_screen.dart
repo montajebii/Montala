@@ -149,7 +149,11 @@ class _ToolEntry {
   final String label;
   final WidgetBuilder builder;
 
-  const _ToolEntry(this.icon, this.label, this.builder);
+  /// Mirror the icon around the vertical axis (points up-left instead of
+  /// up-right — reads naturally in RTL).
+  final bool flipX;
+
+  const _ToolEntry(this.icon, this.label, this.builder, {this.flipX = false});
 }
 
 /// The tools — each one line, so the toolbox grows by appending here.
@@ -158,6 +162,7 @@ const List<_ToolEntry> _tools = [
     Icons.trending_up,
     'سود و زیان فرضی',
     _buildProfitLoss,
+    flipX: true,
   ),
   _ToolEntry(
     Icons.account_balance_wallet_outlined,
@@ -197,7 +202,12 @@ class _ToolGrid extends StatelessWidget {
         runSpacing: Space.m,
         children: [
           for (final tool in _tools)
-            _ToolTile(icon: tool.icon, label: tool.label, builder: tool.builder),
+            _ToolTile(
+              icon: tool.icon,
+              label: tool.label,
+              builder: tool.builder,
+              flipX: tool.flipX,
+            ),
         ],
       ),
     );
@@ -208,11 +218,13 @@ class _ToolTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final WidgetBuilder builder;
+  final bool flipX;
 
   const _ToolTile({
     required this.icon,
     required this.label,
     required this.builder,
+    this.flipX = false,
   });
 
   @override
@@ -243,7 +255,12 @@ class _ToolTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(Radii.lg),
               ),
               alignment: Alignment.center,
-              child: Icon(icon, size: 30, color: MontalaColors.gold),
+              child: flipX
+                  ? Transform.flip(
+                      flipX: true,
+                      child: Icon(icon, size: 30, color: MontalaColors.gold),
+                    )
+                  : Icon(icon, size: 30, color: MontalaColors.gold),
             ),
             const SizedBox(height: Space.m),
             Text(

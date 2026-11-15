@@ -84,11 +84,14 @@ bundled for offline use and refreshable in-app.
 | سکو | روش |
 |---|---|
 | وب | [montajebii.github.io/montala](https://montajebii.github.io/montala/) |
-| اندروید | فایل `app-*-release.apk` از [Releases](https://github.com/montajebii/montala/releases) (نصب مستقیم) |
-| ویندوز | `Montala-v##-windows-x64-setup.exe` از Releases |
-| لینوکس | `Montala-v##-linux-x64.tar.gz` یا `Montala-v##-x86_64.AppImage` از Releases |
+| اندروید | فایل `Montala-<v>-<abi>.apk` از [Releases](https://github.com/montajebii/montala/releases) (نصب مستقیم) |
+| ویندوز | `Montala-<v>-windows-x64-setup.exe` از Releases |
+| لینوکس | `Montala-<v>-linux-x64.tar.gz` یا `Montala-<v>-x86_64.AppImage` از Releases |
 
-هر تگ `v##` به‌صورت خودکار هر چهار خروجی را با GitHub Actions می‌سازد.
+هر تگ `v<version>` به‌صورت خودکار هر چهار خروجی را با GitHub Actions می‌سازد؛
+بستهٔ امضاشدهٔ اندروید (`.aab`) برای انتشار در فروشگاه هم در همان تگ ساخته
+می‌شود. فهرست کامل تغییرات هر نسخه در [CHANGELOG.md](CHANGELOG.md) است و
+قواعد نسخه‌گذاری/انتشار در [docs/RELEASING.md](docs/RELEASING.md) آمده است.
 
 ## ساخت از سورس
 

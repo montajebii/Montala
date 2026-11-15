@@ -2,13 +2,16 @@
 ;
 ; Build:
 ;   1. flutter build windows --release
-;   2. iscc packaging\windows\montala.iss        (Inno Setup 6)
+;   2. iscc /DAppVersion=1.2.0 packaging\windows\montala.iss   (Inno Setup 6)
 ;
-; Produces dist\Montala-1.0.0-windows-x64-setup.exe
+; Always pass /DAppVersion from pubspec.yaml (tools/build_all.sh and the
+; release workflow do). Produces dist\Montala-<version>-windows-x64-setup.exe.
 
 #define AppName "مُنتَلا"
 #define AppNameLatin "Montala"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "0.0.0-dev"
+#endif
 #define AppPublisher "Montala"
 #define AppExe "montala.exe"
 

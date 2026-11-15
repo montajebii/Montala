@@ -13,12 +13,12 @@
 set -euo pipefail
 
 APP_NAME="Montala"
-APP_ID="ir.montala.montala"
-VERSION="${VERSION:-1.0.0}"
+APP_ID="ir.m0nt.montala"
 ARCH="${ARCH:-x86_64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VERSION="${VERSION:-$(sed -n 's/^version: *\([0-9.]*\).*/\1/p' "$APP_ROOT/pubspec.yaml" | head -1)}"
 BUNDLE="$APP_ROOT/build/linux/x64/release/bundle"
 DIST="$APP_ROOT/dist"
 CACHE="$APP_ROOT/.cache/appimage"

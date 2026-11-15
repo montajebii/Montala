@@ -14,19 +14,29 @@ python3 tools/sync_app_assets.py       # pull datasets from the tgju-asset-histo
 flutter pub get
 flutter test
 ./tools/build_all.sh                   # web + linux + android (windows: run on windows)
+#   --no-sync              skip the dataset refresh
+#   --no-pub               skip `flutter pub get` (offline machines with warm cache)
+#   --allow-debug-signing  permit packaging Android artefacts without a keystore
 ```
 
-Artifacts land in `app/dist/`:
+Versioning, changelog rules and signing are covered in
+[`docs/RELEASING.md`](RELEASING.md). A release build requires
+`android/key.properties` (gitignored); without it `build_all.sh` refuses to
+package Android artefacts.
+
+Artifacts land in `dist/`:
 
 | File | Target |
 |---|---|
 | `Montala-<v>-web.zip` | static site (GitHub Pages, any static host) |
 | `Montala-<v>-x86_64.AppImage` | Linux, single executable |
 | `Montala-<v>-linux-x64.tar.gz` | Linux, plain directory bundle |
-| `android/app-*-release.apk` | Android, per ABI |
+| `android/Montala-<v>.aab` | Android, signed bundle for Google Play |
+| `android/Montala-<v>-<abi>.apk` | Android, signed per-ABI APKs |
+| `SHA256SUMS` | checksums for every artefact above |
 
 Windows must be built on Windows (`flutter build windows --release`, then
-`iscc packaging\windows\montala.iss`).
+`iscc /DAppVersion=<version> packaging\windows\montala.iss`).
 
 ## Toolchain versions used
 
@@ -111,16 +121,20 @@ dart run sqflite_common_ffi_web:setup     # writes web/sqlite3.wasm, web/sqflite
 
 ## Rebuilding the icons
 
-The launcher icons are generated procedurally (teal rounded square with a gold
-rising curve) so no binary asset has to be committed:
+`assets/branding/montala-logo.svg` is the single source of truth for the app
+icon. Every raster icon is generated from it, so edit the SVG and rerun the
+generator instead of hand-editing PNGs:
 
 ```bash
-cd app
-python3 - <<'PY'
-# see packaging/README.md for the exact script
-PY
+python3 tools/generate_icons.py      # needs rsvg-convert + Pillow
 ```
 
-`build_all.sh` does not regenerate them; they are committed under
+The script rewrites the Android mipmaps (legacy icons and the adaptive-icon
+foreground), `web/favicon.png`, `web/icons/*.png` (normal and maskable), and
+`windows/runner/resources/app_icon.ico`. The adaptive and maskable variants are
+padded automatically so the mark stays inside the platforms' safe zones.
+
+`build_all.sh` does not regenerate them; the generated files are committed under
 `web/icons/`, `android/app/src/main/res/mipmap-*/` and
-`windows/runner/resources/app_icon.ico`.
+`windows/runner/resources/app_icon.ico`. The web splash screen in
+`web/index.html` reuses `web/icons/Icon-192.png` as the loading logo.

@@ -25,7 +25,14 @@ dist/
 .vscode/
 .zcode/
 .DS_Store
+.directory
 *.log
+
+# Generated context dumps
+repomix-output.xml
+
+# Python
+__pycache__/
 
 # FVM Version Cache
 .fvm/

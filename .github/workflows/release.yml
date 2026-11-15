@@ -1,8 +1,8 @@
 name: Release
 
-# Tag v* -> builds every platform and attaches the artifacts to a GitHub
-# release: web zip, Linux tar.gz + AppImage, per-ABI Android APKs and the
-# Windows Inno Setup installer.
+# Tag v* -> verifies the tag against pubspec/CHANGELOG, builds every platform and
+# attaches the signed web, Linux, Android and Windows artefacts to a GitHub
+# release. See docs/RELEASING.md.
 
 on:
   push:
@@ -12,7 +12,15 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify version, tag and changelog
+        run: python3 tools/release.py check --tag "$GITHUB_REF_NAME"
+
   web:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +30,14 @@ jobs:
       - run: flutter build web --release
       - name: Zip site
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           rm -f build/web/sqlite3.wasm build/web/sqflite_sw.js
-          cd build/web && zip -qr "${{ github.workspace }}/montala-web.zip" .
+          cd build/web && zip -qr "$GITHUB_WORKSPACE/Montala-${VERSION}-web.zip" .
       - uses: actions/upload-artifact@v4
-        with: {name: web, path: montala-web.zip}
+        with: {name: web, path: "Montala-*-web.zip"}
 
   linux:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +53,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cp packaging/linux/montala.desktop build/linux/x64/release/bundle/
-          tar czf "montala-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release bundle
+          tar czf "Montala-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release bundle
           # AppImage is best-effort: if appimagetool download fails, the tar.gz still ships.
           chmod +x packaging/linux/build_appimage.sh tools/build_all.sh || true
           VERSION="$VERSION" ./packaging/linux/build_appimage.sh \
@@ -52,11 +62,12 @@ jobs:
         with:
           name: linux
           path: |
-            montala-*-linux-x64.tar.gz
+            Montala-*-linux-x64.tar.gz
             dist/Montala-*-x86_64.AppImage
           if-no-files-found: warn
 
   android:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,16 +75,66 @@ jobs:
         with: {distribution: temurin, java-version: "21"}
       - uses: subosito/flutter-action@v2
         with: {channel: stable, flutter-version: 3.47.8, cache: true}
+
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          : "${ANDROID_KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is required}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret is required}"
+          : "${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret is required}"
+          : "${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret is required}"
+          KEYSTORE="$RUNNER_TEMP/montala-upload.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          cat > android/key.properties <<EOF
+          storeFile=$KEYSTORE
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+          chmod 600 android/key.properties
+
       - run: flutter pub get
-      # Debug-signed on purpose (documented in android/app/build.gradle.kts);
-      # swap in a keystore from secrets before a public store release.
+      - run: flutter build appbundle --release
       - run: flutter build apk --release --split-per-abi
+
+      - name: Verify signatures
+        env:
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          "$APKSIGNER" verify --print-certs "$APK"
+          cert=$(keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
+          echo "AAB SHA-256: $cert"
+          actual=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          expected=$(printf '%s' "${ANDROID_CERT_SHA256:-}" | tr -d ':' | tr 'A-F' 'a-f')
+          if [ -n "$expected" ] && [ "$actual" != "$expected" ]; then
+            echo "::error::APK certificate does not match ANDROID_CERT_SHA256"
+            exit 1
+          fi
+
+      - name: Name artefacts with the release version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/android
+          cp build/app/outputs/bundle/release/app-release.aab "dist/android/Montala-${VERSION}.aab"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" \
+               "dist/android/Montala-${VERSION}-${abi}.apk"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: build/app/outputs/flutter-apk/*-release.apk
+          path: dist/android/Montala-*
+          if-no-files-found: error
 
   windows:
+    needs: verify
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +149,8 @@ jobs:
       - name: Build installer
         run: |
           $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
-          iscc packaging\windows\montala.iss
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value
+          iscc "/DAppVersion=$version" packaging\windows\montala.iss
         shell: pwsh
       - name: Sanity-check bundled SQLite
         run: |
@@ -100,23 +162,30 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            dist/Montala-*-windows-x64-setup.exe
+          path: dist/Montala-*-windows-x64-setup.exe
           if-no-files-found: warn
 
   publish:
-    needs: [web, linux, android, windows]
+    needs: [verify, web, linux, android, windows]
     runs-on: ubuntu-latest
     steps:
+      # Needed for tools/release.py, which extracts the release notes.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: {path: artifacts}
+      - name: Assemble release assets and notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir upload
+          find artifacts -type f -exec cp {} upload/ \;
+          ( cd upload && sha256sum * > SHA256SUMS )
+          python3 tools/release.py notes "$VERSION" > RELEASE_NOTES.md
+          ls -lh upload
+          cat RELEASE_NOTES.md
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir upload
-          find artifacts -type f | while read -r f; do cp "$f" upload/; done
-          ls -lh upload
           gh release create "$GITHUB_REF_NAME" upload/* -R "$GITHUB_REPOSITORY" \
-            --generate-notes \
+            --notes-file RELEASE_NOTES.md \
             --title "مُنتَلا $GITHUB_REF_NAME"

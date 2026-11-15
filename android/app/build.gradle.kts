@@ -1,11 +1,22 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release signing is configured locally in android/key.properties (gitignored)
+// or in CI by materialising the keystore from secrets before the build.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
-    namespace = "ir.montala.montala"
+    namespace = "ir.m0nt.montala"
     compileSdk = 36
 
     // This app has no native (C/C++) code of its own — sqflite uses the
@@ -22,7 +33,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "ir.montala.montala"
+        applicationId = "ir.m0nt.montala"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
@@ -35,11 +46,29 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Signed with the debug key so `flutter build apk` works out of the
-            // box. Replace with a real keystore before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            // With no key.properties (e.g. a fresh clone) the build still works
+            // but is debug-signed; tools/build_all.sh refuses to package such an
+            // APK/AAB unless explicitly told to. Set up signing via
+            // docs/RELEASING.md before publishing.
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn("android/key.properties is missing — release build will be DEBUG-signed.")
+                signingConfig = signingConfigs.getByName("debug")
+            }
             // R8 is disabled: it requires the Build Tools strip tool, and this
             // app is a Dart binary plus a few Kotlin shell classes, so there is
             // nothing meaningful to shrink.

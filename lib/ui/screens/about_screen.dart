@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_version.dart';
 import '../theme.dart';
@@ -128,6 +129,20 @@ class AboutScreen extends StatelessWidget {
                             color: MontalaColors.inkMuted,
                           ),
                         ),
+                        SizedBox(height: Space.m),
+                        Center(
+                          child: Text(
+                            'با حمایت‌های متین❤️',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              height: 1.6,
+                              color: MontalaColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: Space.xs),
+                        _DonationLink(),
                       ],
                     ),
                   ),
@@ -198,6 +213,46 @@ class _MethodCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Tappable donation link shown under the version block on the About screen.
+class _DonationLink extends StatelessWidget {
+  const _DonationLink();
+
+  static const String _kDonationUrl = 'https://daramet.com/m0nt';
+  static const String _kOpenFailed = 'افتتاح پیوند حمایت ممکن نشد.';
+
+  Future<void> _launch(BuildContext context) async {
+    // Capture the messenger before the async gap so we never touch a
+    // deactivated context when reporting a failure.
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final launched = await launchUrl(
+        Uri.parse(_kDonationUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text(_kOpenFailed)),
+        );
+      }
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text(_kOpenFailed)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton.icon(
+        onPressed: () => _launch(context),
+        icon: const Icon(Icons.favorite_outline, size: 16),
+        label: const Text('حمایت از مُنتَلا'),
       ),
     );
   }

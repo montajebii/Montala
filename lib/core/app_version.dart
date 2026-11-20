@@ -5,7 +5,7 @@
 library;
 
 /// Semantic version, without the Android build number, e.g. `1.2.0`.
-const String kAppVersion = '1.2.0';
+const String kAppVersion = '1.2.1';
 
 /// Same version with Persian digits and the Persian decimal separator, for UI.
-const String kAppVersionFa = '۱٫۲٫۰';
+const String kAppVersionFa = '۱٫۲٫۱';

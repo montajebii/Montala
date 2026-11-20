@@ -18,10 +18,29 @@ Release rules (see `docs/RELEASING.md`):
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-19
+
+### Added
+
+- A donation link on the About screen: a support line ("با حمایت‌های متین❤️")
+  under the version block and a "حمایت از مُنتَلا" button that opens
+  `https://daramet.com/m0nt` in the device's browser. When the platform cannot
+  open the link, a Persian snack bar explains the failure instead.
+
 ### Changed
 
 - Bundled price history for the half-coin, quarter-coin and full-coin series
   extended through 2026-11-12 by the automated data sync.
+
+### Fixed
+
+- History-chart labels in «ارزش دارایی من» now use Vazirmatn instead of falling
+  back to the platform font.
+
+### Build
+
+- Patch release; version bumped to `1.2.1+4`. The About screen's donation link
+  uses the `url_launcher` package (new dependency).
 
 ## [1.2.0] - 2026-11-16
 
@@ -102,7 +121,8 @@ Release rules (see `docs/RELEASING.md`):
 - Flutter application for Android, Windows, Linux and the web (RTL,
   Vazirmatn).
 
-[Unreleased]: https://github.com/montajebii/Montala/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/montajebii/Montala/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/montajebii/Montala/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/montajebii/Montala/compare/v1.0.1...v1.2.0
 [1.0.1]: https://github.com/montajebii/Montala/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/montajebii/Montala/releases/tag/v1.0.0

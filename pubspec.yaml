@@ -1,7 +1,7 @@
 name: montala
 description: "مُنتَلا — جعبه‌ابزار دارایی‌های ایرانی: سود و زیان فرضی، ارزش سبد، تابلو زنده و ارزش دارایی شخصی"
 publish_to: "none"
-version: 1.2.0+3
+version: 1.2.1+4
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -20,6 +20,7 @@ dependencies:
   shared_preferences: ^2.3.2
   html: ^0.15.7
   file_picker: ^13.3.3
+  url_launcher: ^6.3.2
 
 dependency_overrides:
   # Pin the Android implementations that use platform channels. The newer
@@ -34,6 +35,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # The About-screen tests intercept launches through the plugin's platform
+  # interface seam; the lint requires it to be a declared dependency.
+  url_launcher_platform_interface: ^2.3.2
 
 flutter:
   uses-material-design: true

@@ -32,11 +32,20 @@ import '../theme.dart';
 import '../widgets/common.dart';
 
 class NetWorthScreen extends StatefulWidget {
-  const NetWorthScreen({super.key, @visibleForTesting this.storeOverride});
+  const NetWorthScreen({
+    super.key,
+    @visibleForTesting this.storeOverride,
+    @visibleForTesting this.showFab = true,
+  });
 
   /// Test seam: lets widget tests inject a fast, in-memory store instead of
   /// the platform one (real SQLite IO cannot progress under fake-async).
   final PortfolioStore? storeOverride;
+
+  /// Test seam: the store-screenshot goldens hide the FAB — the test
+  /// renderer draws a focus-style ring around it that reads as a rendering
+  /// bug in stills.
+  final bool showFab;
 
   @override
   State<NetWorthScreen> createState() => _NetWorthScreenState();
@@ -132,11 +141,13 @@ class _NetWorthScreenState extends State<NetWorthScreen>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _loading ? null : _addTransaction,
-        icon: const Icon(Icons.add),
-        label: const Text('تراکنش جدید'),
-      ),
+      floatingActionButton: widget.showFab
+          ? FloatingActionButton.extended(
+            onPressed: _loading ? null : _addTransaction,
+            icon: const Icon(Icons.add),
+            label: const Text('تراکنش جدید'),
+          )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
@@ -584,8 +595,10 @@ class _HistoryChartPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = MontalaColors.outline
       ..strokeWidth = 1;
-    final labelStyle = const TextStyle(fontSize: 9,
-        color: MontalaColors.inkMuted);
+    // CustomPainter does not inherit the app theme's font — set it
+    // explicitly or the labels render in the platform fallback font.
+    final labelStyle = const TextStyle(
+        fontSize: 9, color: MontalaColors.inkMuted, fontFamily: 'Vazirmatn');
     for (final g in grid) {
       final gy = y(g.value);
       canvas.drawLine(Offset(padLeft, gy), Offset(padLeft + w, gy), gridPaint);
@@ -644,8 +657,8 @@ class _HistoryChartPainter extends CustomPainter {
     }
 
     // First/last date labels.
-    final dateStyle = const TextStyle(fontSize: 9,
-        color: MontalaColors.inkMuted);
+    final dateStyle = const TextStyle(
+        fontSize: 9, color: MontalaColors.inkMuted, fontFamily: 'Vazirmatn');
     _TextPainterHelper.text(formatJalali(points.first.date), dateStyle)
         .paint(canvas, Offset(padLeft, size.height - padBottom + 4));
     final lastTp =

@@ -21,7 +21,23 @@ import '../widgets/common.dart';
 const int kRefreshSeconds = 60;
 
 class LiveBoardScreen extends StatefulWidget {
-  const LiveBoardScreen({super.key});
+  const LiveBoardScreen({
+    super.key,
+    @visibleForTesting this.seedTgju,
+    @visibleForTesting this.seedEstjt,
+    @visibleForTesting this.autoRefresh = true,
+  });
+
+  /// Test seam for the store-screenshot goldens: render the board from these
+  /// fixed snapshots instead of fetching over the network (golden tests run
+  /// under fake async, where real HTTP never progresses). Keys are board row
+  /// keys. Null → the normal network path.
+  final Map<String, LiveCell>? seedTgju;
+  final Map<String, LiveCell>? seedEstjt;
+
+  /// Test seam: disable the 60s auto-refresh ticker (a periodic timer never
+  /// lets pumpAndSettle settle).
+  final bool autoRefresh;
 
   @override
   State<LiveBoardScreen> createState() => _LiveBoardScreenState();
@@ -50,6 +66,19 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
   @override
   void initState() {
     super.initState();
+    final seeded = widget.seedTgju != null || widget.seedEstjt != null;
+    if (seeded) {
+      // Golden-render path: fixed snapshots, no network, no ticker.
+      _tgjuCells = widget.seedTgju ?? const {};
+      _estjtCells = widget.seedEstjt ?? const {};
+      _tgjuEverLoaded = widget.seedTgju != null;
+      _estjtEverLoaded = widget.seedEstjt != null;
+      _lastRefresh = DateTime.now();
+      if (widget.autoRefresh) {
+        _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+      }
+      return;
+    }
     _refresh();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }

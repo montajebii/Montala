@@ -75,7 +75,11 @@ PortfolioReport portfolioReport({
   required Map<String, List<PriceRow>> history,
   required PriceBasis basis,
 }) {
-  final ordered = [...txs]..sort((a, b) => a.date.compareTo(b.date));
+  final ordered = [...txs]..sort((a, b) {
+      final byTime = a.timestamp.compareTo(b.timestamp);
+      if (byTime != 0) return byTime;
+      return (a.id ?? 0).compareTo(b.id ?? 0);
+    });
 
   // Per-asset average-cost state.
   final units = <String, double>{};
@@ -86,12 +90,13 @@ PortfolioReport portfolioReport({
   for (final tx in ordered) {
     final u = units[tx.assetId] ?? 0;
     final c = cost[tx.assetId] ?? 0.0;
+    final price = tx.effectiveUnitPriceToman;
     if (tx.isBuy) {
       units[tx.assetId] = u + tx.units;
-      cost[tx.assetId] = c + tx.units * tx.unitPriceToman;
+      cost[tx.assetId] = c + tx.units * price;
     } else {
       final avg = u > 0 ? c / u : 0.0;
-      final pnl = (tx.unitPriceToman - avg) * tx.units;
+      final pnl = (price - avg) * tx.units;
       realized.add(RealizedSell(tx: tx, pnlToman: pnl));
       realizedTotal += pnl;
       units[tx.assetId] = u - tx.units;

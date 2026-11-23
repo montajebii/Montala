@@ -26,16 +26,37 @@ import 'package:http/http.dart' as http;
 /// One cell of the board: a source's reading for one row.
 @immutable
 class LiveCell {
-  /// Toman value (or USD for the world-ounce cell) — null when the source has
-  /// no usable reading for the row.
+  /// Toman value (or USD for dollar-denominated cells) — null when the source
+  /// has no usable reading for the row.
   final double? value;
 
-  /// The value is US dollars (world gold ounce), not Toman.
+  /// The value is US dollars (world gold and silver ounce), not Toman.
   final bool isUsd;
 
-  const LiveCell({this.value, this.isUsd = false});
+  /// The value could not be refreshed and was carried forward from the last
+  /// successful reading.
+  final bool stale;
+
+  /// When set, the cell is showing another source's value because this
+  /// source could not supply one (currently only `'tgju'` inside the estjt
+  /// column). The UI must show this explicitly.
+  final String? fallbackSource;
+
+  const LiveCell({
+    this.value,
+    this.isUsd = false,
+    this.stale = false,
+    this.fallbackSource,
+  });
 
   static const empty = LiveCell();
+
+  LiveCell asCarriedForward() => LiveCell(
+        value: value,
+        isUsd: isUsd,
+        stale: true,
+        fallbackSource: fallbackSource,
+      );
 }
 
 /// One source's full reading at a moment in time.
@@ -74,6 +95,9 @@ class LiveBoardRow {
   /// tgju API instrument slug (null → row not on tgju).
   final String? tgjuSlug;
 
+  /// The instrument is quoted in US dollars (world ounce), not Rial/Toman.
+  final bool isUsd;
+
   /// Sanity bounds in Toman; readings outside them are dropped. Null bounds
   /// (unusual-scale rows like silver or the world ounce) skip the check.
   final double? minToman;
@@ -84,6 +108,7 @@ class LiveBoardRow {
     required this.labelFa,
     this.estjtLabel,
     this.tgjuSlug,
+    this.isUsd = false,
     this.minToman,
     this.maxToman,
   });
@@ -165,6 +190,7 @@ const List<LiveBoardRow> kLiveBoardRows = [
     labelFa: 'انس جهانی طلا',
     estjtLabel: 'انس جهانی طلا',
     tgjuSlug: 'ons',
+    isUsd: true,
   ),
   LiveBoardRow(
     key: 'gold_futures',
@@ -175,6 +201,7 @@ const List<LiveBoardRow> kLiveBoardRows = [
     key: 'silver_ons',
     labelFa: 'انس نقره',
     tgjuSlug: 'silver',
+    isUsd: true,
   ),
   LiveBoardRow(
     key: 'silver_999',
@@ -262,20 +289,32 @@ bool _inBounds(LiveBoardRow row, double toman) {
   return toman >= min && toman <= max;
 }
 
-/// Fetches the tgju column from `api.tgju.org` — the same endpoint the price
-/// updater uses; the last table row's close is the live price. Each slug is
-/// independent: a slug that fails just leaves its cell empty.
+/// Fetches the tgju column from the live widget feed.
+///
+/// The daily archive (`summary-table-data`) only carries closed trading days,
+/// so a board built from it always lags by one day (silver_999 showed the
+/// previous close). The widget endpoint returns one live `p` per instrument
+/// in a single small response and sends `Access-Control-Allow-Origin: *`, so
+/// it works on every platform.
 Future<LiveSnapshot> fetchTgjuLive({http.Client? client}) async {
   final ownClient = client ?? http.Client();
   try {
-    final rows =
-        kLiveBoardRows.where((r) => r.onTgju).toList(growable: false);
-    final results = await Future.wait(
-      rows.map((r) => _fetchTgjuSlug(ownClient, r)),
+    final slugs = kLiveBoardRows
+        .where((r) => r.onTgju)
+        .map((r) => r.tgjuSlug!)
+        .toList(growable: false);
+    final uri = Uri.parse(
+      'https://api.tgju.org/v1/widget/tmp?keys=${slugs.join(',')}',
     );
-    final cells = <String, LiveCell>{};
-    for (var i = 0; i < rows.length; i++) {
-      if (results[i] != null) cells[rows[i].key] = results[i]!;
+    final response = await ownClient
+        .get(uri, headers: {'User-Agent': _userAgent})
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw http.ClientException('HTTP ${response.statusCode}', uri);
+    }
+    final cells = parseTgjuWidgetPayload(response.body);
+    if (cells.isEmpty) {
+      throw const FormatException('tgju: no usable live quotes');
     }
     return LiveSnapshot(
       source: 'tgju',
@@ -287,34 +326,46 @@ Future<LiveSnapshot> fetchTgjuLive({http.Client? client}) async {
   }
 }
 
-Future<LiveCell?> _fetchTgjuSlug(http.Client client, LiveBoardRow row) async {
-  try {
-    final uri = Uri.parse(
-      'https://api.tgju.org/v1/market/indicator/summary-table-data/'
-      '${row.tgjuSlug}?lang=fa&order_dir=asc',
-    );
-    final response = await client
-        .get(uri, headers: {'User-Agent': _userAgent})
-        .timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) return null;
-    final payload = jsonDecode(response.body);
-    if (payload is! Map<String, dynamic> || payload['data'] is! List) {
-      return null;
-    }
-    final data = payload['data'] as List;
-    if (data.isEmpty) return null;
-    final last = data.last;
-    if (last is! List || last.length < 4) return null;
-    final parsed = parseLooseMarketNumber('${last[3]}');
-    if (parsed == null) return null;
-    // tgju quotes are Rial; the board speaks Toman.
-    if (parsed.isUsd) return LiveCell(value: parsed.value, isUsd: true);
-    final toman = parsed.value / 10;
-    if (!_inBounds(row, toman)) return null;
-    return LiveCell(value: toman);
-  } catch (_) {
-    return null;
+/// Parses the live widget payload into board cells.
+///
+/// `response.indicators[].name` is the requested slug (`ons`, `silver`, …);
+/// `.slug` is tgju's internal Persian slug and must not be used for lookup.
+/// `p` is the live price: USD for the ounce instruments, Rial for the rest.
+@visibleForTesting
+Map<String, LiveCell> parseTgjuWidgetPayload(String body) {
+  final payload = jsonDecode(body);
+  if (payload is! Map<String, dynamic>) return const {};
+  final response = payload['response'];
+  if (response is! Map<String, dynamic> || response['indicators'] is! List) {
+    return const {};
   }
+
+  final rawByName = <String, Object?>{};
+  for (final item in response['indicators'] as List) {
+    if (item is! Map<String, dynamic>) continue;
+    final name = item['name'];
+    if (name is String) rawByName[name] = item['p'];
+  }
+
+  final cells = <String, LiveCell>{};
+  for (final row in kLiveBoardRows) {
+    if (!row.onTgju) continue;
+    final raw = rawByName[row.tgjuSlug];
+    if (raw == null) continue;
+    final parsed = parseLooseMarketNumber('$raw');
+    if (parsed == null || parsed.value <= 0) continue;
+    // Currency is a property of the instrument, not of the API's formatting:
+    // the JSON never contains `$`, so a USD row must never take the ÷10 path.
+    if (row.isUsd || parsed.isUsd) {
+      cells[row.key] = LiveCell(value: parsed.value, isUsd: true);
+      continue;
+    }
+    // tgju quotes Rial; the board speaks Toman.
+    final toman = parsed.value / 10;
+    if (!_inBounds(row, toman)) continue;
+    cells[row.key] = LiveCell(value: toman);
+  }
+  return cells;
 }
 
 /// Scrapes the estjt.ir live board (native platforms only — no CORS header).
@@ -324,7 +375,7 @@ Future<LiveSnapshot> fetchEstjtLive({http.Client? client}) async {
     final uri = Uri.parse('https://www.estjt.ir/tv/');
     final response = await ownClient
         .get(uri, headers: _browserHeaders)
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 25));
     if (response.statusCode != 200) {
       throw http.ClientException('HTTP ${response.statusCode}', uri);
     }
@@ -402,7 +453,8 @@ LiveSnapshot parseEstjtHtml(String body, {required DateTime fetchedAt}) {
 
 /// Carries a fresh board snapshot over the previous one — port of ftgn's
 /// `merge_with_previous`: a cell whose new reading is missing keeps the last
-/// known value instead of flashing to empty.
+/// known value instead of flashing to empty. Carried cells are marked
+/// [LiveCell.stale] so the UI can say so instead of pretending they are live.
 Map<String, LiveCell> mergeCells({
   required Map<String, LiveCell> previous,
   required Map<String, LiveCell> fresh,
@@ -414,12 +466,43 @@ Map<String, LiveCell> mergeCells({
     if (f != null && f.value != null) {
       merged[row.key] = f;
     } else if (p != null && p.value != null) {
-      merged[row.key] = p;
+      merged[row.key] = p.asCarriedForward();
     } else {
       merged[row.key] = LiveCell.empty;
     }
   }
   return merged;
+}
+
+/// Fills every gap in [primary] with the same row's value from [fallback],
+/// marked stale and tagged with [source] so the UI can show that the number
+/// came from the other column. Never fabricates a value: a row missing from
+/// both sources stays empty.
+Map<String, LiveCell> fallbackMissing({
+  required Map<String, LiveCell> primary,
+  required Map<String, LiveCell> fallback,
+  required String source,
+}) {
+  final out = <String, LiveCell>{};
+  for (final row in kLiveBoardRows) {
+    final p = primary[row.key];
+    if (p != null && p.value != null) {
+      out[row.key] = p;
+      continue;
+    }
+    final f = fallback[row.key];
+    if (f != null && f.value != null) {
+      out[row.key] = LiveCell(
+        value: f.value,
+        isUsd: f.isUsd,
+        stale: true,
+        fallbackSource: source,
+      );
+    } else {
+      out[row.key] = p ?? LiveCell.empty;
+    }
+  }
+  return out;
 }
 
 /// Percent change between two readings; null when either side is missing.
@@ -441,14 +524,14 @@ const Map<String, String> _browserHeaders = {
 
 /// Formats one board cell for display: the grouped Persian-digit value and
 /// the unit that goes next to it. Values are stored in Toman; with
-/// [inToman] off they display ×10 as Rial. Dollar cells (world ounce) are
-/// always labelled دلار.
+/// [inToman] off they display ×10 as Rial. Dollar cells always show their
+/// cents and are labelled دلار.
 ({String value, String unit}) formatLiveCell(LiveCell cell, bool inToman) {
   final v = cell.value;
   if (v == null) return (value: '—', unit: '');
   if (cell.isUsd) {
     return (
-      value: '\$${toPersianDigits(groupThousands(v.round()))}',
+      value: '\$${_usdFa(v)}',
       unit: 'دلار',
     );
   }
@@ -459,4 +542,13 @@ const Map<String, String> _browserHeaders = {
     value: toPersianDigits(groupThousands((v * 10).round())),
     unit: 'ریال',
   );
+}
+
+/// `3569.88` → `۳٬۵۶۹٫۸۸` (two decimals, Persian separators).
+String _usdFa(double v) {
+  final cents = (v * 100).round();
+  final whole = cents ~/ 100;
+  final fraction = (cents % 100).toString().padLeft(2, '0');
+  final grouped = groupThousands(whole);
+  return toPersianDigits('$grouped.$fraction').replaceAll('.', '٫');
 }

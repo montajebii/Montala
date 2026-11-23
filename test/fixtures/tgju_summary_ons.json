@@ -1,0 +1,43 @@
+{
+ "_fixture": {
+  "captured_at": "2026-11-20T16:50:00+03:30",
+  "page": "https://www.tgju.org/profile/ons",
+  "api": "https://api.tgju.org/v1/market/indicator/summary-table-data/ons?lang=fa&order_dir=asc",
+  "note": "Verbatim tail of the real summary-table-data payload; data rows are unmodified, trimmed to the last three for repository size."
+ },
+ "draw": null,
+ "recordsTotal": 12196,
+ "recordsFiltered": 12196,
+ "data": [
+  [
+   "3,883.92",
+   "3,841.45",
+   "3,887.37",
+   "3,846.32",
+   "<span class=\"high\" dir=\"ltr\">120.52</span>",
+   "<span class=\"high\" dir=\"ltr\">3.23%</span>",
+   "2026/11/17",
+   "1405/08/26"
+  ],
+  [
+   "3,850.79",
+   "3,720.88",
+   "3,856.97",
+   "3,725.80",
+   "<span class=\"high\" dir=\"ltr\">57.55</span>",
+   "<span class=\"high\" dir=\"ltr\">1.57%</span>",
+   "2026/11/18",
+   "1405/08/27"
+  ],
+  [
+   "3,728.82",
+   "3,662.93",
+   "3,755.60",
+   "3,668.25",
+   "<span class=\"high\" dir=\"ltr\">57.55</span>",
+   "<span class=\"high\" dir=\"ltr\">1.57%</span>",
+   "2026/11/19",
+   "1405/08/28"
+  ]
+ ]
+}

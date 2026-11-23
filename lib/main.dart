@@ -17,7 +17,10 @@ import 'core/db/db_factory_native.dart'
     if (dart.library.js_interop) 'core/db/db_factory_web.dart';
 import 'core/db/importer.dart';
 import 'core/models.dart';
+import 'core/net/price_sync.dart';
 import 'core/net/updater.dart';
+import 'core/portfolio/portfolio_snapshot.dart';
+import 'core/portfolio/portfolio_store.dart';
 import 'core/settings/settings.dart';
 import 'core/symbols.dart';
 import 'ui/app_scope.dart';
@@ -59,7 +62,11 @@ Future<void> _bootstrap() async {
 
   final calculator = Calculator(history);
 
-  Future<void> refresh() async {
+  /// Fetches every symbol, reloads the in-memory archive, tells the tools
+  /// that the prices changed, and appends/refreshes the value snapshot.
+  /// Returns the per-symbol results so the launch sync can distinguish
+  /// success from a fully failed run.
+  Future<List<SymbolUpdateResult>> updatePrices() async {
     final updater = Updater();
     final results = await updater.updateAll();
     if (results.any((r) => r.ok)) {
@@ -68,6 +75,31 @@ Future<void> _bootstrap() async {
     for (final symbol in kSymbols) {
       history[symbol.id] = await AppDb.pricesForSymbol(symbol.id);
     }
+    calculator.markPricesChanged();
+
+    // The snapshot is local and small; a failure here must never turn a
+    // successful price refresh into an error for the user.
+    try {
+      final store = createPortfolioStore();
+      try {
+        final txs = await store.transactions();
+        await capturePortfolioSnapshot(
+          store: store,
+          txs: txs,
+          history: history,
+          basis: settings.basis,
+        );
+      } finally {
+        await store.close();
+      }
+    } catch (error) {
+      debugPrint('portfolio snapshot failed: $error');
+    }
+    return results;
+  }
+
+  Future<void> refresh() async {
+    await updatePrices();
   }
 
   runApp(
@@ -75,30 +107,63 @@ Future<void> _bootstrap() async {
       settings: settings,
       calculator: calculator,
       refreshData: refresh,
+      backgroundUpdate: updatePrices,
     ),
   );
 }
 
-class MontalaApp extends StatelessWidget {
+class MontalaApp extends StatefulWidget {
   final Settings settings;
   final Calculator calculator;
   final Future<void> Function() refreshData;
+
+  /// Runs once, after the first frame, when [Settings.autoUpdate] is on.
+  final Future<List<SymbolUpdateResult>> Function()? backgroundUpdate;
 
   const MontalaApp({
     super.key,
     required this.settings,
     required this.calculator,
     required this.refreshData,
+    this.backgroundUpdate,
   });
+
+  @override
+  State<MontalaApp> createState() => _MontalaAppState();
+}
+
+class _MontalaAppState extends State<MontalaApp> {
+  PriceSyncController? _sync;
+
+  @override
+  void initState() {
+    super.initState();
+    final run = widget.backgroundUpdate;
+    if (!widget.settings.autoUpdate || run == null) return;
+    final sync = PriceSyncController(run: run);
+    _sync = sync;
+    // Never await here: runApp and the first frame are already done, and the
+    // sync must not delay painting the launcher.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      sync.start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _sync?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
-      settings: settings,
-      calculator: calculator,
-      refreshData: refreshData,
+      settings: widget.settings,
+      calculator: widget.calculator,
+      refreshData: widget.refreshData,
       child: AnimatedBuilder(
-        animation: settings,
+        animation: widget.settings,
         builder: (context, _) {
           return MaterialApp(
             title: 'مُنتَلا',
@@ -114,13 +179,56 @@ class MontalaApp extends StatelessWidget {
             builder: (context, child) {
               return Directionality(
                 textDirection: TextDirection.rtl,
-                child: child ?? const SizedBox.shrink(),
+                child: _SyncShell(
+                  sync: _sync,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
             home: const LauncherScreen(),
           );
         },
       ),
+    );
+  }
+}
+
+/// Thin, quiet progress strip shown while the launch sync runs. It overlays
+/// the top edge of the app bar, so nothing shifts when it appears or clears.
+class _SyncShell extends StatelessWidget {
+  final PriceSyncController? sync;
+  final Widget child;
+
+  const _SyncShell({required this.sync, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = sync;
+    if (controller == null) return child;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        if (!controller.state.running) return child;
+        return Stack(
+          children: [
+            child,
+            Positioned(
+              top: MediaQuery.of(context).padding.top,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: Semantics(
+                  label: 'به‌روزرسانی قیمت‌ها',
+                  child: const SizedBox(
+                    height: 2,
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

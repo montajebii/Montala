@@ -1,0 +1,5 @@
+timestamp,asset,event_type,units,unit_price_toman,total_toman,source
+2026-09-03 03:41:00,shemsh24,BUY,0.5,15000000,7500000,auto
+2026-09-03 04:08:21.771873,shemsh24,BUY,0.5,15000000.0,7500000.0,manual
+2026-09-03 04:09:18.255776,shemsh24,BUY,0.5,15000000.0,7500000.0,manual
+2026-09-03 04:21:04,shemsh24,BUY,0.5,15000000.0,7500000.0,manual

@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/calc/calculator.dart';
 import '../../core/net/live_quotes.dart';
 import '../../core/util/format.dart';
 import '../app_scope.dart';
@@ -26,6 +27,9 @@ class LiveBoardScreen extends StatefulWidget {
     @visibleForTesting this.seedTgju,
     @visibleForTesting this.seedEstjt,
     @visibleForTesting this.autoRefresh = true,
+    @visibleForTesting this.tgjuLoader,
+    @visibleForTesting this.estjtLoader,
+    @visibleForTesting this.estjtMinInterval = const Duration(seconds: 30),
   });
 
   /// Test seam for the store-screenshot goldens: render the board from these
@@ -38,6 +42,14 @@ class LiveBoardScreen extends StatefulWidget {
   /// Test seam: disable the 60s auto-refresh ticker (a periodic timer never
   /// lets pumpAndSettle settle).
   final bool autoRefresh;
+
+  /// Test seams for the live-fetch path. Null → the real HTTP callers.
+  final Future<LiveSnapshot> Function()? tgjuLoader;
+  final Future<LiveSnapshot> Function()? estjtLoader;
+
+  /// Base interval between estjt attempts; failures double it up to 5 min.
+  /// Tests that exercise alternating failures pass [Duration.zero].
+  final Duration estjtMinInterval;
 
   @override
   State<LiveBoardScreen> createState() => _LiveBoardScreenState();
@@ -53,8 +65,6 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
 
   bool _tgjuStale = false;
   bool _estjtStale = false;
-  bool _tgjuEverLoaded = false;
-  bool _estjtEverLoaded = false;
   String? _tgjuNote;
   String? _estjtNote;
 
@@ -62,6 +72,32 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
   int _countdown = kRefreshSeconds;
   Timer? _ticker;
   DateTime? _lastRefresh;
+
+  // estjt asks one at a time, waits between attempts, and backs off after a
+  // failure. Kept here (not in the fetch function) so manual refreshes share
+  // the same budget as the 60s ticker.
+  bool _estjtInFlight = false;
+  int _estjtFailures = 0;
+  DateTime? _estjtNextAttempt;
+
+  Calculator? _priceSource;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A background archive update bumps the calculator; refresh the live
+    // column too so an open board is not left on pre-update data. The fetch
+    // guards keep this to one extra request at most.
+    final calculator = AppScope.of(context).calculator;
+    if (identical(calculator, _priceSource)) return;
+    _priceSource?.removeListener(_onPriceArchiveChanged);
+    _priceSource = calculator..addListener(_onPriceArchiveChanged);
+  }
+
+  void _onPriceArchiveChanged() {
+    if (!mounted || _busy) return;
+    _refresh();
+  }
 
   @override
   void initState() {
@@ -71,8 +107,6 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
       // Golden-render path: fixed snapshots, no network, no ticker.
       _tgjuCells = widget.seedTgju ?? const {};
       _estjtCells = widget.seedEstjt ?? const {};
-      _tgjuEverLoaded = widget.seedTgju != null;
-      _estjtEverLoaded = widget.seedEstjt != null;
       _lastRefresh = DateTime.now();
       if (widget.autoRefresh) {
         _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
@@ -85,19 +119,19 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
 
   @override
   void dispose() {
+    _priceSource?.removeListener(_onPriceArchiveChanged);
     _ticker?.cancel();
     super.dispose();
   }
 
   void _tick() {
     if (_busy) return;
-    setState(() {
-      _countdown -= 1;
-      if (_countdown <= 0) {
-        _countdown = kRefreshSeconds;
-        _refresh();
-      }
-    });
+    if (_countdown <= 1) {
+      setState(() => _countdown = kRefreshSeconds);
+      _refresh();
+      return;
+    }
+    setState(() => _countdown -= 1);
   }
 
   Future<void> _refresh() async {
@@ -107,46 +141,88 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     final prevTgju = _tgjuCells;
     final prevEstjt = _estjtCells;
 
-    // estjt is native-only (no CORS header on the web).
-    final wantEstjt = !kIsWeb;
-    final results = await Future.wait<Object?>(
-        [_fetchTgju(), if (wantEstjt) _fetchEstjt(prevEstjtStale: _estjtStale)]);
+    // tgju first: one 6 KB live request. Rendering it before estjt starts
+    // keeps the board responsive and stops the sources competing for
+    // bandwidth (the old code launched 13 multi-MB archive downloads at the
+    // same time as the estjt page).
+    final tgju = await _fetchTgju();
+    if (!mounted) return;
+    setState(() {
+      _lastRefresh = DateTime.now();
+      _applyTgju(tgju, prevTgju);
+    });
+
+    // estjt is native-only (no CORS header on the web) and throttled.
+    final wantEstjt = !kIsWeb && _estjtDue(DateTime.now());
+    if (wantEstjt) {
+      _estjtInFlight = true;
+      final estjt = await _fetchEstjt();
+      _estjtInFlight = false;
+      if (!mounted) return;
+      setState(() => _applyEstjt(estjt, prevEstjt));
+    }
 
     if (!mounted) return;
     setState(() {
       _busy = false;
       _countdown = kRefreshSeconds;
-      _lastRefresh = DateTime.now();
-
-      final tgju = results[0] as LiveSnapshot;
-      _tgjuCells = mergeCells(previous: prevTgju, fresh: tgju.cells);
-      _tgjuDelta = {
-        for (final row in kLiveBoardRows)
-          row.key: changePct(prevTgju[row.key]?.value,
-              _tgjuCells[row.key]?.value),
-      };
-      _tgjuStale = tgju.stale || _tgjuEverLoaded && tgju.cells.isEmpty;
-      _tgjuEverLoaded = _tgjuEverLoaded || tgju.cells.isNotEmpty;
-      _tgjuNote = tgju.note;
-
-      if (wantEstjt) {
-        final estjt = results[1] as LiveSnapshot;
-        _estjtCells = mergeCells(previous: prevEstjt, fresh: estjt.cells);
-        _estjtDelta = {
-          for (final row in kLiveBoardRows)
-            row.key: changePct(prevEstjt[row.key]?.value,
-                _estjtCells[row.key]?.value),
-        };
-        _estjtStale = estjt.stale;
-        _estjtEverLoaded = _estjtEverLoaded || estjt.cells.isNotEmpty;
-        _estjtNote = estjt.note;
-      }
     });
+  }
+
+  void _applyTgju(LiveSnapshot snap, Map<String, LiveCell> prev) {
+    _tgjuCells = mergeCells(previous: prev, fresh: snap.cells);
+    _tgjuDelta = {
+      for (final row in kLiveBoardRows)
+        row.key:
+            changePct(prev[row.key]?.value, _tgjuCells[row.key]?.value),
+    };
+    _tgjuStale = snap.stale ||
+        _tgjuCells.values.any((c) => c.value != null && c.stale);
+    _tgjuNote = snap.note;
+  }
+
+  void _applyEstjt(LiveSnapshot snap, Map<String, LiveCell> prev) {
+    _estjtCells = mergeCells(previous: prev, fresh: snap.cells);
+    // A symbol estjt cannot serve falls back to the same tgju row, visibly
+    // tagged — never to a fabricated number.
+    _estjtCells = fallbackMissing(
+      primary: _estjtCells,
+      fallback: _tgjuCells,
+      source: 'tgju',
+    );
+    _estjtDelta = {
+      for (final row in kLiveBoardRows)
+        row.key:
+            changePct(prev[row.key]?.value, _estjtCells[row.key]?.value),
+    };
+
+    final failed = snap.stale || snap.cells.isEmpty;
+    _estjtFailures = failed ? _estjtFailures + 1 : 0;
+    _estjtNextAttempt = DateTime.now().add(_estjtBackoff());
+    _estjtStale = _estjtCells.values.any(
+      (c) => c.value != null && (c.stale || c.fallbackSource != null),
+    );
+    _estjtNote = snap.note;
+  }
+
+  bool _estjtDue(DateTime now) {
+    if (_estjtInFlight) return false;
+    final next = _estjtNextAttempt;
+    return next == null || !now.isBefore(next);
+  }
+
+  Duration _estjtBackoff() {
+    if (widget.estjtMinInterval == Duration.zero) return Duration.zero;
+    if (_estjtFailures <= 0) return widget.estjtMinInterval;
+    final exponent = (_estjtFailures - 1).clamp(0, 4);
+    final seconds = widget.estjtMinInterval.inSeconds * (1 << exponent);
+    return Duration(seconds: seconds.clamp(1, 300));
   }
 
   Future<LiveSnapshot> _fetchTgju() async {
     try {
-      return await fetchTgjuLive();
+      final loader = widget.tgjuLoader;
+      return loader != null ? await loader() : await fetchTgjuLive();
     } catch (e) {
       return LiveSnapshot(
         source: 'tgju',
@@ -158,16 +234,17 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
     }
   }
 
-  Future<LiveSnapshot> _fetchEstjt({required bool prevEstjtStale}) async {
+  Future<LiveSnapshot> _fetchEstjt() async {
     try {
-      return await fetchEstjtLive();
+      final loader = widget.estjtLoader;
+      return loader != null ? await loader() : await fetchEstjtLive();
     } catch (e) {
       return LiveSnapshot(
         source: 'estjt',
         fetchedAt: DateTime.now(),
         stale: true,
         cells: const {},
-        note: prevEstjtStale ? '$e' : null,
+        note: '$e',
       );
     }
   }
@@ -234,8 +311,10 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
 
   Widget _statusStrip(bool showEstjt) {
     final problems = <String>[];
-    if (_tgjuStale) problems.add('tgju قطع — آخرین مقادیر');
-    if (showEstjt && _estjtStale) problems.add('estjt قطع — آخرین مقادیر');
+    if (_tgjuStale) problems.add('tgju قطع — آخرین مقدار');
+    if (showEstjt && _estjtStale) {
+      problems.add('estjt قطع — آخرین مقدار یا جایگزین tgju');
+    }
 
     final updated = _lastRefresh == null
         ? 'در حال دریافت…'
@@ -426,6 +505,10 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
       cell ?? const LiveCell(),
       inToman,
     );
+    final fallback = cell?.fallbackSource;
+    final badge = fallback != null
+        ? 'از $fallback'
+        : (cell?.stale == true && cell?.value != null ? 'کهنه' : null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -457,9 +540,26 @@ class _LiveBoardScreenState extends State<LiveBoardScreen> {
                 ),
               ),
             ],
+            if (badge != null) ...[
+              const SizedBox(width: 3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: MontalaColors.outline,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  badge,
+                  style: const TextStyle(
+                    fontSize: 8,
+                    color: MontalaColors.inkMuted,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
-        DeltaText(delta, fontSize: 10.5),
+        DeltaText(fallback != null ? null : delta, fontSize: 10.5),
       ],
     );
   }

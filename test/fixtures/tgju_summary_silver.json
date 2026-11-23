@@ -1,0 +1,43 @@
+{
+ "_fixture": {
+  "captured_at": "2026-11-20T16:50:00+03:30",
+  "page": "https://www.tgju.org/profile/silver",
+  "api": "https://api.tgju.org/v1/market/indicator/summary-table-data/silver?lang=fa&order_dir=asc",
+  "note": "Verbatim tail of the real summary-table-data payload; data rows are unmodified, trimmed to the last three for repository size."
+ },
+ "draw": null,
+ "recordsTotal": 11549,
+ "recordsFiltered": 11549,
+ "data": [
+  [
+   "49.3210",
+   "47.11",
+   "49.3210",
+   "47.24",
+   "<span class=\"high\" dir=\"ltr\">2.2</span>",
+   "<span class=\"high\" dir=\"ltr\">4.88%</span>",
+   "2026/11/17",
+   "1405/08/26"
+  ],
+  [
+   "47.33",
+   "44.84",
+   "47.58",
+   "45.04",
+   "<span class=\"high\" dir=\"ltr\">0.98</span>",
+   "<span class=\"high\" dir=\"ltr\">2.22%</span>",
+   "2026/11/18",
+   "1405/08/27"
+  ],
+  [
+   "45.10",
+   "44.01",
+   "45.84",
+   "44.06",
+   "<span class=\"high\" dir=\"ltr\">0.98</span>",
+   "<span class=\"high\" dir=\"ltr\">2.22%</span>",
+   "2026/11/19",
+   "1405/08/28"
+  ]
+ ]
+}

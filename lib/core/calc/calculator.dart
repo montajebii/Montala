@@ -11,6 +11,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../models.dart';
 import '../symbols.dart';
 import 'forecast.dart';
@@ -60,7 +62,7 @@ PriceRow? rowOnOrBefore(List<PriceRow> rows, DateTime target) {
   return found;
 }
 
-class Calculator {
+class Calculator extends ChangeNotifier {
   final Map<String, List<PriceRow>> _history;
 
   Calculator(this._history);
@@ -68,6 +70,10 @@ class Calculator {
   /// The full price archive backing this calculator — shared with tools that
   /// value portfolios (ارزش دارایی من) without re-reading the database.
   Map<String, List<PriceRow>> get history => _history;
+
+  /// Called by the updater after [history] has been reloaded, so open tools
+  /// can rebuild without polling.
+  void markPricesChanged() => notifyListeners();
 
   List<PriceRow> historyFor(String symbolId) => _history[symbolId] ?? const [];
 

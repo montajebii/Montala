@@ -22,6 +22,7 @@ import '../../core/portfolio/portfolio_analytics.dart';
 import '../../core/portfolio/portfolio_calc.dart';
 import '../../core/portfolio/portfolio_csv.dart';
 import '../../core/portfolio/portfolio_models.dart';
+import '../../core/portfolio/portfolio_snapshot.dart';
 import '../../core/portfolio/portfolio_store.dart';
 import '../../core/symbols.dart';
 import '../../core/util/format.dart';
@@ -57,7 +58,9 @@ class _NetWorthScreenState extends State<NetWorthScreen>
   late final TabController _tabs;
 
   List<PortfolioTx> _txs = const [];
+  List<PortfolioSnapshot> _snapshots = const [];
   bool _loading = true;
+  bool _recalculating = false;
 
   @override
   void initState() {
@@ -80,9 +83,11 @@ class _NetWorthScreenState extends State<NetWorthScreen>
 
   Future<void> _load() async {
     final txs = await _store.transactions();
+    final snapshots = await _store.snapshots();
     if (!mounted) return;
     setState(() {
       _txs = txs;
+      _snapshots = snapshots;
       _loading = false;
     });
   }
@@ -91,6 +96,7 @@ class _NetWorthScreenState extends State<NetWorthScreen>
 
   @override
   Widget build(BuildContext context) {
+    final calculator = AppScope.of(context).calculator;
     return Scaffold(
       appBar: AppBar(
         title: const Text('ارزش دارایی من'),
@@ -113,18 +119,47 @@ class _NetWorthScreenState extends State<NetWorthScreen>
                 'تب تحلیل، میانگین متحرک، نوسان ۳۰ روزه و نقاط غیرعادی سری '
                     'ارزش را هم نشان می‌دهد. داده فقط روی دستگاه خودتان '
                     'ذخیره می‌شود.',
-                'تراکنش‌ها با CSV خروجی/ورودی می‌شوند (دکمه‌های بالای صفحه) — '
-                    'برای انتقال بین دستگاه‌ها یا پشتیبان‌گیری.',
+                'تراکنش‌ها و تاریخچه ارزش با CSV خروجی/ورودی می‌شوند — '
+                    'قالب m0ntIsRich هم پذیرفته می‌شود. دکمه «محاسبه مجدد» '
+                    'ارزش امروز را به تاریخچه ارزش اضافه می‌کند.',
               ],
             ),
           ),
           IconButton(
+            tooltip: 'محاسبه مجدد',
+            icon: _recalculating
+                ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 21),
+            onPressed: _loading || _recalculating ? null : _recalculate,
+          ),
+          PopupMenuButton<String>(
             tooltip: 'خروجی CSV',
+            enabled: !_loading,
             icon: const Icon(Icons.file_upload_outlined, size: 21),
-            onPressed: _loading ? null : _exportCsv,
+            onSelected: (value) {
+              if (value == 'transactions') {
+                _exportTransactionsCsv();
+              } else if (value == 'snapshots') {
+                _exportSnapshotsCsv();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'transactions',
+                child: Text('تراکنش‌ها (CSV)'),
+              ),
+              PopupMenuItem(
+                value: 'snapshots',
+                child: Text('تاریخچه ارزش (CSV)'),
+              ),
+            ],
           ),
           IconButton(
-            tooltip: 'ورودی CSV',
+            tooltip: 'ورودی CSV — تراکنش یا تاریخچه',
             icon: const Icon(Icons.file_download_outlined, size: 21),
             onPressed: _loading ? null : _importCsv,
           ),
@@ -150,23 +185,39 @@ class _NetWorthScreenState extends State<NetWorthScreen>
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabs,
-              children: [
-                _TodayTab(
-                  txs: _txs,
-                  history: _history,
-                  basis: _basis,
-                ),
-                _HistoryTab(txs: _txs, history: _history, basis: _basis),
-                _TransactionsTab(
-                  txs: _txs,
-                  history: _history,
-                  onChanged: _load,
-                  onEdit: _editTransaction,
-                ),
-                _AnalysisTab(txs: _txs, history: _history, basis: _basis),
-              ],
+          : AnimatedBuilder(
+              animation: calculator,
+              builder: (context, _) => TabBarView(
+                controller: _tabs,
+                children: [
+                  _TodayTab(
+                    txs: _txs,
+                    history: _history,
+                    basis: _basis,
+                    inToman: AppScope.of(context).settings.inToman,
+                  ),
+                  _HistoryTab(
+                    txs: _txs,
+                    history: _history,
+                    basis: _basis,
+                    snapshots: _snapshots,
+                    inToman: AppScope.of(context).settings.inToman,
+                  ),
+                  _TransactionsTab(
+                    txs: _txs,
+                    history: _history,
+                    inToman: AppScope.of(context).settings.inToman,
+                    onChanged: _load,
+                    onEdit: _editTransaction,
+                  ),
+                  _AnalysisTab(
+                    txs: _txs,
+                    history: _history,
+                    basis: _basis,
+                    inToman: AppScope.of(context).settings.inToman,
+                  ),
+                ],
+              ),
             ),
     );
   }
@@ -201,27 +252,46 @@ class _NetWorthScreenState extends State<NetWorthScreen>
 
   // ------------------------------------------------------------ csv in/out
 
-  Future<void> _exportCsv() async {
-    final csv = encodeTxsCsv(_txs);
+  Future<void> _exportTransactionsCsv() async {
+    await _saveCsv(
+      fileName: 'montala_transactions.csv',
+      title: 'خروجی تراکنش‌ها',
+      csv: encodeTxsCsv(_txs),
+    );
+  }
+
+  Future<void> _exportSnapshotsCsv() async {
+    await _saveCsv(
+      fileName: 'montala_history.csv',
+      title: 'خروجی تاریخچه ارزش',
+      csv: encodeSnapshotsCsv(_snapshots),
+    );
+  }
+
+  Future<void> _saveCsv({
+    required String fileName,
+    required String title,
+    required String csv,
+  }) async {
     try {
       if (kIsWeb) {
-        await _showCsvDialog('خروجی تراکنش‌ها', csv);
+        await _showCsvDialog(title, csv);
         return;
       }
       final uri = await FilePicker.saveFile(
-        fileName: 'montala_portfolio.csv',
+        fileName: fileName,
         mimeType: 'text/csv',
         bytes: utf8.encode(csv),
       );
       if (uri == null) {
         // Dialog dismissed (or web download already handled) — fall back to
         // the text dialog so the data is always reachable.
-        await _showCsvDialog('خروجی تراکنش‌ها', csv);
+        await _showCsvDialog(title, csv);
       } else {
         _snack('فایل ذخیره شد: $uri');
       }
     } catch (e) {
-      await _showCsvDialog('خروجی تراکنش‌ها', csv);
+      await _showCsvDialog(title, csv);
     }
   }
 
@@ -237,37 +307,107 @@ class _NetWorthScreenState extends State<NetWorthScreen>
         allowMalformed: true,
       );
 
-      final parsed = parseTxsCsv(text);
-      if (parsed.txs.isEmpty && parsed.errors.isNotEmpty) {
-        _snack('هیچ ردیف معتبری پیدا نشد:\n${parsed.errors.take(3).join('\n')}');
-        return;
-      }
-      if (!mounted) return;
-
-      final mode = await showDialog<_ImportMode>(
-        context: context,
-        builder: (context) => _ImportModeDialog(
-          parsed: parsed,
-          hasExisting: _txs.isNotEmpty,
-        ),
-      );
-      if (mode == null) return;
-
-      if (mode == _ImportMode.replace) {
-        await _store.replaceAll(parsed.txs);
+      if (looksLikeSnapshotCsv(text)) {
+        await _importSnapshotsCsv(text);
       } else {
-        for (final tx in parsed.txs) {
-          await _store.addTransaction(tx);
-        }
+        await _importTransactionsCsv(text);
       }
-      await _load();
-      if (!mounted) return;
-      _snack(mode == _ImportMode.replace
-          ? '${toPersianDigits('${parsed.txs.length}')} تراکنش جایگزین شد'
-          : '${toPersianDigits('${parsed.txs.length}')} تراکنش اضافه شد');
     } catch (e) {
       if (!mounted) return;
       _snack('ورود فایل ناموفق بود: $e');
+    }
+  }
+
+  Future<void> _importTransactionsCsv(String text) async {
+    final parsed = parseTxsCsv(text);
+    if (parsed.txs.isEmpty && parsed.errors.isNotEmpty) {
+      _snack('هیچ ردیف معتبری پیدا نشد:\n${parsed.errors.take(3).join('\n')}');
+      return;
+    }
+    if (!mounted) return;
+
+    final mode = await showDialog<_ImportMode>(
+      context: context,
+      builder: (context) => _ImportModeDialog(
+        title: 'ورود تراکنش‌ها',
+        count: parsed.txs.length,
+        errorCount: parsed.errors.length,
+        hasExisting: _txs.isNotEmpty,
+      ),
+    );
+    if (mode == null) return;
+
+    if (mode == _ImportMode.replace) {
+      await _store.replaceAll(parsed.txs);
+    } else {
+      for (final tx in parsed.txs) {
+        await _store.addTransaction(tx);
+      }
+    }
+    await _load();
+    if (!mounted) return;
+    _snack(mode == _ImportMode.replace
+        ? '${toPersianDigits('${parsed.txs.length}')} تراکنش جایگزین شد'
+        : '${toPersianDigits('${parsed.txs.length}')} تراکنش اضافه شد');
+  }
+
+  Future<void> _importSnapshotsCsv(String text) async {
+    final parsed = parseSnapshotsCsv(text);
+    if (parsed.snapshots.isEmpty && parsed.errors.isNotEmpty) {
+      _snack('هیچ ردیف معتبری پیدا نشد:\n${parsed.errors.take(3).join('\n')}');
+      return;
+    }
+    if (!mounted) return;
+
+    final mode = await showDialog<_ImportMode>(
+      context: context,
+      builder: (context) => _ImportModeDialog(
+        title: 'ورود تاریخچه ارزش',
+        count: parsed.snapshots.length,
+        errorCount: parsed.errors.length,
+        hasExisting: _snapshots.isNotEmpty,
+      ),
+    );
+    if (mode == null) return;
+
+    if (mode == _ImportMode.replace) {
+      await _store.replaceAllSnapshots(parsed.snapshots);
+    } else {
+      for (final snapshot in parsed.snapshots) {
+        await _store.addSnapshot(snapshot);
+      }
+    }
+    await _load();
+    if (!mounted) return;
+    _snack(mode == _ImportMode.replace
+        ? '${toPersianDigits('${parsed.snapshots.length}')} عکس ارزش جایگزین شد'
+        : '${toPersianDigits('${parsed.snapshots.length}')} عکس ارزش اضافه شد');
+  }
+
+  Future<void> _recalculate() async {
+    if (_recalculating) return;
+    setState(() => _recalculating = true);
+    try {
+      final saved = await capturePortfolioSnapshot(
+        store: _store,
+        txs: _txs,
+        history: _history,
+        basis: _basis,
+        source: 'recalc',
+      );
+      await _load();
+      if (!mounted) return;
+      if (saved == null) {
+        _snack('دارایی قیمت‌خورده‌ای برای محاسبه وجود ندارد.');
+      } else {
+        final inToman = AppScope.of(context).settings.inToman;
+        _snack('ارزش به‌روز شد: ${_money(saved.totalToman, inToman)}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _snack('محاسبه مجدد ناموفق بود: $e');
+    } finally {
+      if (mounted) setState(() => _recalculating = false);
     }
   }
 
@@ -317,11 +457,13 @@ class _TodayTab extends StatelessWidget {
   final List<PortfolioTx> txs;
   final Map<String, List<PriceRow>> history;
   final PriceBasis basis;
+  final bool inToman;
 
   const _TodayTab({
     required this.txs,
     required this.history,
     required this.basis,
+    required this.inToman,
   });
 
   @override
@@ -368,7 +510,7 @@ class _TodayTab extends StatelessWidget {
                     ),
                     const SizedBox(height: Space.s),
                     Text(
-                      _fmtCompactToman(point.totalToman),
+                      _money(point.totalToman, inToman),
                       style: const TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
@@ -381,6 +523,14 @@ class _TodayTab extends StatelessWidget {
                       '${formatJalaliLong(DateTime.now())}',
                       style: const TextStyle(
                           fontSize: 11, color: MontalaColors.inkMuted),
+                    ),
+                    const SizedBox(height: Space.xs),
+                    Text(
+                      '${toPersianDigits('${point.valueByAsset.length}')} '
+                      'دارایی قیمت‌خورده · واحد پول: '
+                      '${inToman ? 'تومان' : 'ریال'}',
+                      style: const TextStyle(
+                          fontSize: 10.5, color: MontalaColors.inkMuted),
                     ),
                   ],
                 ),
@@ -441,7 +591,7 @@ class _TodayTab extends StatelessWidget {
               Expanded(
                 flex: 3,
                 child: Text(
-                  _fmtCompactToman(entry.value),
+                  _money(entry.value, inToman),
                   textAlign: TextAlign.left,
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w700),
@@ -473,11 +623,15 @@ class _HistoryTab extends StatelessWidget {
   final List<PortfolioTx> txs;
   final Map<String, List<PriceRow>> history;
   final PriceBasis basis;
+  final List<PortfolioSnapshot> snapshots;
+  final bool inToman;
 
   const _HistoryTab({
     required this.txs,
     required this.history,
     required this.basis,
+    required this.snapshots,
+    required this.inToman,
   });
 
   @override
@@ -513,6 +667,15 @@ class _HistoryTab extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(Space.l),
           children: [
+            Text(
+              'ارزش کل پرتفوی (${inToman ? 'تومان' : 'ریال'})',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: MontalaColors.inkMuted,
+              ),
+            ),
+            const SizedBox(height: Space.xs),
             Card(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(Space.m, Space.m,
@@ -523,6 +686,7 @@ class _HistoryTab extends StatelessWidget {
                     painter: _HistoryChartPainter(
                       points: series,
                       txs: txs,
+                      scale: inToman ? 1 : 10,
                     ),
                   ),
                 ),
@@ -535,7 +699,8 @@ class _HistoryTab extends StatelessWidget {
                 children: [
                   const _LegendSwatch(color: MontalaColors.brand),
                   const SizedBox(width: 4),
-                  const Text('ارزش کل', style: TextStyle(fontSize: 11)),
+                  Text('ارزش کل (${inToman ? 'تومان' : 'ریال'})',
+                      style: const TextStyle(fontSize: 11)),
                   const SizedBox(width: Space.m),
                   const Icon(Icons.arrow_drop_up, size: 15,
                       color: MontalaColors.gain),
@@ -547,13 +712,88 @@ class _HistoryTab extends StatelessWidget {
                 ],
               ),
             ),
+            if (snapshots.isNotEmpty) ...[
+              const SizedBox(height: Space.m),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(Space.m),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'عکس‌های ارزش ثبت‌شده',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: Space.s),
+                      for (final snapshot in snapshots.reversed.take(12))
+                        _snapshotRow(snapshot),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: Space.xxl),
           ],
         ),
       ),
     );
   }
+
+  Widget _snapshotRow(PortfolioSnapshot snapshot) {
+    final units = [
+      for (final line in snapshot.lines)
+        '${symbolById(line.assetId).nameFa} '
+            '${formatDoubleFa(line.units, symbolById(line.assetId).unitDecimals)} '
+            '${symbolById(line.assetId).unitFa}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Space.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${formatJalali(snapshot.timestamp)} '
+                  '${toPersianDigits(_timeFa(snapshot.timestamp))} · '
+                  '${_snapshotSourceFa(snapshot.source)}',
+                  style: const TextStyle(
+                      fontSize: 11.5, color: MontalaColors.inkMuted),
+                ),
+              ),
+              Text(
+                _money(snapshot.totalToman, inToman),
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          if (units.isNotEmpty)
+            Text(
+              units,
+              style: const TextStyle(
+                  fontSize: 10, color: MontalaColors.inkMuted),
+            ),
+        ],
+      ),
+    );
+  }
 }
+
+String _timeFa(DateTime d) =>
+    '${d.hour.toString().padLeft(2, '0')}:'
+    '${d.minute.toString().padLeft(2, '0')}';
+
+String _snapshotSourceFa(String source) => switch (source) {
+      'launch' => 'هنگام اجرا',
+      'recalc' => 'محاسبه مجدد',
+      'manual' => 'دستی',
+      'import' => 'ورودی CSV',
+      'legacy' => 'داده قدیمی',
+      _ => source,
+    };
 
 class _LegendSwatch extends StatelessWidget {
   final Color color;
@@ -571,7 +811,14 @@ class _HistoryChartPainter extends CustomPainter {
   final List<PortfolioPoint> points;
   final List<PortfolioTx> txs;
 
-  _HistoryChartPainter({required this.points, required this.txs});
+  /// 1 → Toman, 10 → Rial. The series itself is stored in Toman.
+  final double scale;
+
+  _HistoryChartPainter({
+    required this.points,
+    required this.txs,
+    this.scale = 1,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -583,7 +830,7 @@ class _HistoryChartPainter extends CustomPainter {
     final t0 = points.first.date.millisecondsSinceEpoch.toDouble();
     final t1 = points.last.date.millisecondsSinceEpoch.toDouble();
     final maxV =
-        points.map((p) => p.totalToman).reduce(math.max) * 1.08;
+        points.map((p) => p.totalToman * scale).reduce(math.max) * 1.08;
 
     double x(DateTime d) =>
         padLeft +
@@ -611,7 +858,7 @@ class _HistoryChartPainter extends CustomPainter {
     for (var i = 0; i < points.length; i++) {
       final p = points[i];
       final px = x(p.date);
-      final py = y(p.totalToman);
+      final py = y(p.totalToman * scale);
       if (i == 0) {
         line.moveTo(px, py);
       } else {
@@ -639,7 +886,7 @@ class _HistoryChartPainter extends CustomPainter {
         }
       }
       final mx = x(tx.date);
-      final my = y(nearest.totalToman);
+      final my = y(nearest.totalToman * scale);
       final paint = Paint()
         ..color = tx.isBuy ? MontalaColors.gain : MontalaColors.loss;
       final path = Path();
@@ -671,7 +918,7 @@ class _HistoryChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HistoryChartPainter old) =>
-      old.points != points || old.txs != txs;
+      old.points != points || old.txs != txs || old.scale != scale;
 }
 
 /// Small text-painter helpers so the chart painter stays readable.
@@ -701,15 +948,22 @@ class _GridLabel {
   const _GridLabel(this.value, this.label);
 }
 
-/// Compact Toman formatting: «۱۲٫۵ میلیارد» / «۳۴۰ میلیون» / grouped.
+/// Compact formatting: «۱۲٫۵ میلیارد» / «۳۴۰ میلیون» / grouped.
 String fmtCompactToman(double v) {
-  if (v >= 1e9) return '${formatDoubleFa(v / 1e9, 1)} میلیارد';
-  if (v >= 1e6) return '${formatDoubleFa(v / 1e6, 1)} میلیون';
-  if (v >= 1e3) return toPersianDigits(groupThousands(v.round()));
-  return toPersianDigits(v.toStringAsFixed(0));
+  final sign = v < 0 ? '−' : '';
+  final a = v.abs();
+  if (a >= 1e9) return '$sign${formatDoubleFa(a / 1e9, 1)} میلیارد';
+  if (a >= 1e6) return '$sign${formatDoubleFa(a / 1e6, 1)} میلیون';
+  if (a >= 1e3) return '$sign${toPersianDigits(groupThousands(a.round()))}';
+  return '$sign${toPersianDigits(a.toStringAsFixed(0))}';
 }
 
-String _fmtCompactToman(double v) => fmtCompactToman(v);
+/// A portfolio amount with its unit spelled out. Values are stored in Toman;
+/// the Rial setting only changes presentation (×10).
+String _money(double toman, bool inToman) {
+  final value = inToman ? toman : toman * 10;
+  return '${fmtCompactToman(value)} ${inToman ? 'تومان' : 'ریال'}';
+}
 
 // --------------------------------------------------------------------------
 // transactions
@@ -717,12 +971,14 @@ String _fmtCompactToman(double v) => fmtCompactToman(v);
 class _TransactionsTab extends StatelessWidget {
   final List<PortfolioTx> txs;
   final Map<String, List<PriceRow>> history;
+  final bool inToman;
   final VoidCallback onChanged;
   final void Function(PortfolioTx) onEdit;
 
   const _TransactionsTab({
     required this.txs,
     required this.history,
+    required this.inToman,
     required this.onChanged,
     required this.onEdit,
   });
@@ -737,7 +993,11 @@ class _TransactionsTab extends StatelessWidget {
         ),
       );
     }
-    final ordered = [...txs]..sort((a, b) => b.date.compareTo(a.date));
+    final ordered = [...txs]..sort((a, b) {
+        final byTime = b.timestamp.compareTo(a.timestamp);
+        if (byTime != 0) return byTime;
+        return (b.id ?? 0).compareTo(a.id ?? 0);
+      });
 
     return Center(
       child: ConstrainedBox(
@@ -762,51 +1022,88 @@ class _TransactionsTab extends StatelessWidget {
 
   Widget _row(BuildContext context, PortfolioTx tx, bool divider) {
     final symbol = symbolById(tx.assetId);
+    final incomplete = tx.incomplete;
     return InkWell(
       onTap: () => onEdit(tx),
-      child: Column(
-        children: [
-          if (divider) const Divider(height: 1),
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: Space.m, vertical: Space.s),
-            child: Row(
-              children: [
-                Icon(
-                  tx.isBuy ? Icons.arrow_downward : Icons.arrow_upward,
-                  size: 17,
-                  color: tx.isBuy ? MontalaColors.gain : MontalaColors.loss,
-                ),
-                const SizedBox(width: Space.s),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      child: Container(
+        color: incomplete ? MontalaColors.goldSoft : null,
+        child: Column(
+          children: [
+            if (divider) const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: Space.m, vertical: Space.s),
+              child: Row(
+                children: [
+                  Icon(
+                    incomplete
+                        ? Icons.error_outline
+                        : tx.isBuy
+                            ? Icons.arrow_downward
+                            : Icons.arrow_upward,
+                    size: 17,
+                    color: incomplete
+                        ? MontalaColors.gold
+                        : tx.isBuy
+                            ? MontalaColors.gain
+                            : MontalaColors.loss,
+                  ),
+                  const SizedBox(width: Space.s),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${symbol.nameFa} · '
+                          '${formatDoubleFa(tx.units, symbol.unitDecimals)} '
+                          '${symbol.unitFa}',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '${formatJalali(tx.date)} · '
+                          '${toPersianDigits(_timeFa(tx.timestamp))}'
+                          '${tx.note == null || tx.note!.isEmpty ? '' : ' · ${tx.note}'}',
+                          style: const TextStyle(
+                              fontSize: 11, color: MontalaColors.inkMuted),
+                        ),
+                        if (incomplete)
+                          const Text(
+                            'تراکنش ناقص — برای تکمیل قیمت ضربه بزنید',
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                color: MontalaColors.gold,
+                                fontWeight: FontWeight.w600),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '${symbol.nameFa} · '
-                        '${formatDoubleFa(tx.units, symbol.unitDecimals)} '
-                        '${symbol.unitFa}',
+                        incomplete
+                            ? 'نامشخص'
+                            : _money(tx.effectiveTotalToman, inToman),
                         style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600),
+                            fontSize: 12.5, fontWeight: FontWeight.w600),
                       ),
-                      Text(
-                        '${formatJalali(tx.date)}'
-                        '${tx.note == null || tx.note!.isEmpty ? '' : ' · ${tx.note}'}',
-                        style: const TextStyle(
-                            fontSize: 11, color: MontalaColors.inkMuted),
-                      ),
+                      if (incomplete)
+                        Text(
+                          'تکمیل',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: MontalaColors.brand,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                     ],
                   ),
-                ),
-                Text(
-                  fmtCompactToman(tx.totalToman),
-                  style: const TextStyle(
-                      fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -833,7 +1130,7 @@ class _TxDialog extends StatefulWidget {
 class _TxDialogState extends State<_TxDialog> {
   late String _assetId;
   late bool _isBuy;
-  late DateTime _date;
+  late DateTime _timestamp;
   late final TextEditingController _units;
   late final TextEditingController _price;
   late final TextEditingController _note;
@@ -845,13 +1142,13 @@ class _TxDialogState extends State<_TxDialog> {
     final e = widget.existing;
     _assetId = e?.assetId ?? 'sekee';
     _isBuy = e?.isBuy ?? true;
-    _date = e?.date ?? DateTime.now();
+    _timestamp = e?.timestamp ?? DateTime.now();
     _units = TextEditingController(
       text: e == null ? '' : formatDoubleFa(e.units,
           symbolById(e.assetId).unitDecimals).replaceAll('٫', '.'),
     );
     _price = TextEditingController(
-      text: e == null ? '' : _numFa(e.unitPriceToman),
+      text: e == null || e.incomplete ? '' : _numFa(e.unitPriceToman),
     );
     _note = TextEditingController(text: e?.note ?? '');
     if (e == null) _prefillPrice();
@@ -870,14 +1167,14 @@ class _TxDialogState extends State<_TxDialog> {
   }
 
   void _prefillPrice() {
-    final p = _dbPrice(_assetId, _date);
+    final p = _dbPrice(_assetId, _timestamp);
     if (p > 0) _price.text = _numFa(p);
   }
 
   Future<void> _pickDate() async {
     final picked = await showJalaliDatePicker(
       context,
-      initialDate: _date,
+      initialDate: _timestamp,
       // Only dates this asset actually has data for are reachable — the
       // floor moves when the user switches asset in the form.
       firstDate: earliestDataDate(widget.history, ids: {_assetId}),
@@ -886,7 +1183,16 @@ class _TxDialogState extends State<_TxDialog> {
     );
     if (picked == null) return;
     setState(() {
-      _date = picked;
+      _timestamp = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _timestamp.hour,
+        _timestamp.minute,
+        _timestamp.second,
+        _timestamp.millisecond,
+        _timestamp.microsecond,
+      );
       if (!_priceTouched) _prefillPrice();
     });
   }
@@ -905,12 +1211,14 @@ class _TxDialogState extends State<_TxDialog> {
       return;
     }
     final tx = PortfolioTx(
-      date: _date,
+      timestamp: _timestamp,
       assetId: _assetId,
       type: _isBuy ? 'BUY' : 'SELL',
       units: units,
       unitPriceToman: price,
+      totalToman: units * price,
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      incomplete: false,
     );
     try {
       assertSellAllowed(widget.txs, tx);
@@ -930,8 +1238,13 @@ class _TxDialogState extends State<_TxDialog> {
   @override
   Widget build(BuildContext context) {
     final symbol = symbolById(_assetId);
+    final incomplete = widget.existing?.incomplete == true;
     return AlertDialog(
-      title: Text(widget.existing == null ? 'تراکنش جدید' : 'ویرایش تراکنش'),
+      title: Text(widget.existing == null
+          ? 'تراکنش جدید'
+          : incomplete
+              ? 'تکمیل تراکنش'
+              : 'ویرایش تراکنش'),
       contentPadding: const EdgeInsets.fromLTRB(Space.l, Space.m, Space.l, 0),
       content: SizedBox(
         width: 380,
@@ -940,6 +1253,23 @@ class _TxDialogState extends State<_TxDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (incomplete)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Space.m),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(Space.s),
+                    decoration: BoxDecoration(
+                      color: MontalaColors.goldSoft,
+                      borderRadius: BorderRadius.circular(Radii.sm),
+                    ),
+                    child: const Text(
+                      'این تراکنش قیمت ندارد. قیمت هر واحد را وارد کنید تا '
+                      'تکمیل شود.',
+                      style: TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                ),
               DropdownButtonFormField<String>(
                 initialValue: _assetId,
                 decoration: const InputDecoration(labelText: 'دارایی'),
@@ -970,7 +1300,7 @@ class _TxDialogState extends State<_TxDialog> {
                 onTap: _pickDate,
                 child: InputDecorator(
                   decoration: const InputDecoration(labelText: 'تاریخ'),
-                  child: Text(formatJalaliLong(_date)),
+                  child: Text(formatJalaliLong(_timestamp)),
                 ),
               ),
               const SizedBox(height: Space.m),
@@ -1046,25 +1376,30 @@ class _TxDialogResult {
 // import mode dialog
 
 class _ImportModeDialog extends StatelessWidget {
-  final CsvParseResult parsed;
+  final String title;
+  final int count;
+  final int errorCount;
   final bool hasExisting;
 
-  const _ImportModeDialog({required this.parsed, required this.hasExisting});
+  const _ImportModeDialog({
+    required this.title,
+    required this.count,
+    required this.errorCount,
+    required this.hasExisting,
+  });
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('ورود تراکنش‌ها'),
+      title: Text(title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${toPersianDigits('${parsed.txs.length}')} تراکنش معتبر '
-              'در فایل پیدا شد.'),
-          if (parsed.errors.isNotEmpty) ...[
+          Text('${toPersianDigits('$count')} ردیف معتبر در فایل پیدا شد.'),
+          if (errorCount > 0) ...[
             const SizedBox(height: Space.s),
-            Text('${toPersianDigits('${parsed.errors.length}')} ردیف نامعتبر '
-                'رد می‌شود.',
+            Text('${toPersianDigits('$errorCount')} ردیف نامعتبر رد می‌شود.',
                 style: const TextStyle(color: MontalaColors.loss)),
           ],
           const SizedBox(height: Space.m),
@@ -1098,11 +1433,13 @@ class _AnalysisTab extends StatelessWidget {
   final List<PortfolioTx> txs;
   final Map<String, List<PriceRow>> history;
   final PriceBasis basis;
+  final bool inToman;
 
   const _AnalysisTab({
     required this.txs,
     required this.history,
     required this.basis,
+    required this.inToman,
   });
 
   @override
@@ -1178,7 +1515,7 @@ class _AnalysisTab extends StatelessWidget {
                                   style: TextStyle(
                                       fontWeight: FontWeight.w700)),
                               Text(
-                                fmtCompactToman(report.realizedPnlToman),
+                                _money(report.realizedPnlToman, inToman),
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: report.realizedPnlToman >= 0
@@ -1200,7 +1537,9 @@ class _AnalysisTab extends StatelessWidget {
                 child: Column(
                   children: [
                     _metricRow('میانگین متحرک ۳۰ روزه (آخرین)',
-                        ma30 == null ? '—' : fmtCompactToman(ma30)),
+                        ma30 == null
+                            ? '—'
+                            : _money(ma30, inToman)),
                     _metricRow('نوسان ۳۰ روزه (انحراف معیار بازده روزانه)',
                         vol == null ? '—' : '${formatDoubleFa(vol, 1)}٪'),
                     _metricRow('نقاط غیرعادی (|z| > ۲)',
@@ -1245,7 +1584,7 @@ class _AnalysisTab extends StatelessWidget {
                 Text(
                   '${formatDoubleFa(p.units, symbol.unitDecimals)} '
                   '${symbol.unitFa} · میانگین خرید '
-                  '${fmtCompactToman(p.avgCostToman)}',
+                  '${_money(p.avgCostToman, inToman)}',
                   style: const TextStyle(
                       fontSize: 11, color: MontalaColors.inkMuted),
                 ),
@@ -1255,7 +1594,7 @@ class _AnalysisTab extends StatelessWidget {
           Expanded(
             flex: 2,
             child: Text(
-              fmtCompactToman(p.marketValueToman),
+              _money(p.marketValueToman, inToman),
               textAlign: TextAlign.left,
               style: const TextStyle(fontSize: 12.5),
             ),
@@ -1280,12 +1619,13 @@ class _AnalysisTab extends StatelessWidget {
             child: Text(
               '${symbol.nameFa} · فروش '
               '${formatDoubleFa(r.tx.units, symbol.unitDecimals)} '
-              '${symbol.unitFa} · ${formatJalali(r.tx.date)}',
+              '${symbol.unitFa} · ${formatJalali(r.tx.date)} '
+              '${toPersianDigits(_timeFa(r.tx.timestamp))}',
               style: const TextStyle(fontSize: 12.5),
             ),
           ),
           Text(
-            fmtCompactToman(r.pnlToman),
+            _money(r.pnlToman, inToman),
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,

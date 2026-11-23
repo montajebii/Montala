@@ -27,9 +27,9 @@ version: 1.2.0+3
 - Every release has an annotated tag `vX.Y.Z` whose version equals `pubspec.yaml`.
   `python3 tools/release.py check --tag vX.Y.Z` enforces this in CI.
 
-Git tags already in use: `v1.0.0`, `v1.0.1`. This release: `v1.2.0`
-(`1.2.0+3`). Skipping `1.1.0` is intentional — it was developed but never
-published, so the next public version is `1.2.0`.
+Git tags already in use: `v1.0.0`, `v1.0.1`, `v1.2.0`, `v1.2.1`. This release: `v1.2.2` (`1.2.2+5`).
+Version `1.1.0` was developed but never published, so the next public
+version after `v1.0.1` was `v1.2.0`.
 
 ## Application identifiers
 
@@ -54,7 +54,7 @@ in the past tense, and describe observable behaviour — not refactors, not comm
 Before a release, generate a starting point from commit subjects:
 
 ```bash
-python3 tools/release.py draft --since v1.2.0   # prints a draft, never edits
+python3 tools/release.py draft --since v1.2.1   # prints a draft, never edits
 ```
 
 Review every line against the actual diff. If something is not in the changelog,
@@ -114,11 +114,11 @@ The CI job verifies the built APK and AAB are signed and, when
 ```bash
 # 1. Development: keep CHANGELOG.md's Unreleased section current.
 #    At release time, sanity-check the draft:
-python3 tools/release.py draft --since v1.2.0
+python3 tools/release.py draft --since v1.2.1
 
 # 2. Promote Unreleased, bump pubspec + app version, run analyze/tests,
 #    commit and tag (annotated). This is the release commit.
-python3 tools/release.py prepare --version 1.3.0
+python3 tools/release.py prepare --version 1.2.2
 
 # 3. Build every local artefact (signed AAB + APKs, web zip, Linux bundle +
 #    AppImage) and write dist/SHA256SUMS.

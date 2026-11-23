@@ -1,8 +1,7 @@
 name: montala
 description: "مُنتَلا — جعبه‌ابزار دارایی‌های ایرانی: سود و زیان فرضی، ارزش سبد، تابلو زنده و ارزش دارایی شخصی"
 publish_to: "none"
-version: 1.2.1+4
-
+version: 1.2.2+5
 environment:
   sdk: ">=3.4.0 <4.0.0"
 

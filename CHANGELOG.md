@@ -18,6 +18,86 @@ Release rules (see `docs/RELEASING.md`):
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-23
+
+### Added
+
+- Background price refresh at launch: prices update after the first frame, the
+  launcher stays responsive, and a thin progress strip appears while it works.
+  Open tools now pick up the new archive without a manual refresh.
+- A «محاسبه مجدد» button in «ارزش دارایی من» that records the current value in
+  the value history.
+- CSV export now offers both the transaction log and the value history; import
+  detects which one a file contains. m0ntIsRich's transaction and
+  `sarmaye_history.csv` files import without conversion.
+- Value snapshots appear in the history tab with their timestamp, per-asset
+  units and source (launch, recalculation or import).
+
+### Changed
+
+- The live board reads a single live tgju feed instead of thirteen daily
+  archives. Gold and silver ounces show USD with cents; every other row is the
+  live Rial quote converted once to Toman.
+- Portfolio transactions keep full timestamps, explicit totals and a source;
+  the stored data migrates in place without losing rows, ids or values.
+- Amounts in «ارزش دارایی من» always spell out their unit (تومان or ریال),
+  including charts, averages and profit/loss.
+- Bundled price history was refreshed through 2026-11-22.
+
+### Fixed
+
+- Gold ounce no longer appears as «۳۶۷ تومان» and silver ounce no longer as
+  «۴ تومان»; silver 999 shows today's live price instead of yesterday's close.
+- estjt failures no longer blank the board: the last good value is kept and
+  marked stale, a missing value falls back to tgju and is labelled as such,
+  and repeated failures are backed off.
+- Imported transactions with no price are flagged as incomplete and can be
+  completed in place instead of silently skewing the analysis.
+
+### Build
+
+- Version bumped to `1.2.2+5`. Builds refresh the bundled datasets first and
+  can be gated with `build_all.sh --check-only` (24-hour freshness check).
+
+### Added
+
+- Background price refresh at launch: prices update after the first frame, the
+  launcher stays responsive, and a thin progress strip appears while it works.
+  Open tools now pick up the new archive without a manual refresh.
+- A «محاسبه مجدد» button in «ارزش دارایی من» that records the current value in
+  the value history.
+- CSV export now offers both the transaction log and the value history; import
+  detects which one a file contains. m0ntIsRich's transaction and
+  `sarmaye_history.csv` files import without conversion.
+- Value snapshots appear in the history tab with their timestamp, per-asset
+  units and source (launch, recalculation or import).
+
+### Changed
+
+- The live board reads a single live tgju feed instead of thirteen daily
+  archives. Gold and silver ounces show USD with cents; every other row is the
+  live Rial quote converted once to Toman.
+- Portfolio transactions keep full timestamps, explicit totals and a source;
+  the stored data migrates in place without losing rows, ids or values.
+- Amounts in «ارزش دارایی من» always spell out their unit (تومان or ریال),
+  including charts, averages and profit/loss.
+- Bundled price history was refreshed through 2026-11-22.
+
+### Fixed
+
+- Gold ounce no longer appears as «۳۶۷ تومان» and silver ounce no longer as
+  «۴ تومان»; silver 999 shows today's live price instead of yesterday's close.
+- estjt failures no longer blank the board: the last good value is kept and
+  marked stale, a missing value falls back to tgju and is labelled as such,
+  and repeated failures are backed off.
+- Imported transactions with no price are flagged as incomplete and can be
+  completed in place instead of silently skewing the analysis.
+
+### Build
+
+- Version bumped to `1.2.2+5`. Builds refresh the bundled datasets first and
+  can be gated with `build_all.sh --check-only` (24-hour freshness check).
+
 ## [1.2.1] - 2026-11-19
 
 ### Added
@@ -121,7 +201,8 @@ Release rules (see `docs/RELEASING.md`):
 - Flutter application for Android, Windows, Linux and the web (RTL,
   Vazirmatn).
 
-[Unreleased]: https://github.com/montajebii/Montala/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/montajebii/Montala/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/montajebii/Montala/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/montajebii/Montala/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/montajebii/Montala/compare/v1.0.1...v1.2.0
 [1.0.1]: https://github.com/montajebii/Montala/compare/v1.0.0...v1.0.1

@@ -42,6 +42,22 @@ void main() {
     }
   });
 
+  test('bundled datasets were synced within the last 24 hours', () {
+    // build_all.sh refreshes the datasets before every build and exposes the
+    // same gate as --check-only. A stale checkout must fail here rather than
+    // ship yesterday's prices as a "fresh" release.
+    final now = DateTime.now();
+    for (final symbol in kSymbols) {
+      final file = File(symbol.csvAsset);
+      final age = now.difference(file.lastModifiedSync());
+      expect(
+        age.compareTo(const Duration(hours: 24)),
+        lessThanOrEqualTo(0),
+        reason: '${symbol.id} was last synced ${age.inHours}h ago',
+      );
+    }
+  });
+
   test('real prices are positive and OHLC-consistent after parsing', () {
     for (final symbol in kSymbols) {
       for (final r in histories[symbol.id]!) {

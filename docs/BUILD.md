@@ -17,7 +17,16 @@ flutter test
 #   --no-sync              skip the dataset refresh
 #   --no-pub               skip `flutter pub get` (offline machines with warm cache)
 #   --allow-debug-signing  permit packaging Android artefacts without a keystore
+#   --check-only           verify dataset drift + 24h freshness, run the
+#                          dataset test, then exit without building
 ```
+
+`build_all.sh` always refreshes the datasets before a build unless `--no-sync`
+is passed. `--check-only` is the release gate: it downloads the engine data,
+compares it with the bundled CSVs, refuses files whose last sync is older than
+24 hours (`--max-age-hours N` / `--no-freshness` tune this in
+`sync_app_assets.py`), and runs `test/dataset_integration_test.dart`. It never
+builds or modifies the working tree.
 
 Versioning, changelog rules and signing are covered in
 [`docs/RELEASING.md`](RELEASING.md). A release build requires

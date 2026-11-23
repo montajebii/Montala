@@ -16,7 +16,8 @@ the app.
 Usage:
     python3 tools/sync_app_assets.py              # local engine checkout
     python3 tools/sync_app_assets.py --remote https://raw.githubusercontent.com/montajebii/tgju-asset-history/main/data
-    python3 tools/sync_app_assets.py --check      # verify only, exit 1 on drift
+    python3 tools/sync_app_assets.py --check      # verify drift + 24h freshness
+    python3 tools/sync_app_assets.py --check --no-freshness
 """
 
 import argparse
@@ -25,6 +26,7 @@ import glob
 import os
 import shutil
 import sys
+import time
 import urllib.request
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -76,21 +78,35 @@ def main(argv):
     parser.add_argument("--remote", help="URL base to download datasets from")
     parser.add_argument("--local", help="local engine data/ directory")
     parser.add_argument("--check", action="store_true", help="verify only")
+    parser.add_argument(
+        "--max-age-hours",
+        type=int,
+        default=24,
+        help="bundled files older than this fail --check (default: 24)",
+    )
+    parser.add_argument(
+        "--no-freshness",
+        action="store_true",
+        help="with --check, ignore the file-age gate",
+    )
     args = parser.parse_args(argv)
 
-    source = args.remote or (args.local or DEFAULT_LOCAL)
-    mode = "remote" if (args.remote or (not args.local and source == DEFAULT_REMOTE and not os.path.isdir(DEFAULT_LOCAL))) else "local"
     if args.remote:
+        source = args.remote
         mode = "remote"
     elif args.local:
+        source = args.local
         mode = "local"
     elif os.path.isdir(DEFAULT_LOCAL):
+        source = DEFAULT_LOCAL
         mode = "local"
     else:
+        source = DEFAULT_REMOTE
         mode = "remote"
 
     os.makedirs(ASSET_DIR, exist_ok=True)
     drifted = []
+    now = time.time()
     for name in DATASETS:
         src = f"{source.rstrip('/')}/{name}"
         dst = os.path.join(ASSET_DIR, name)
@@ -105,20 +121,30 @@ def main(argv):
             return 1
         same = os.path.exists(dst) and open(dst, "rb").read() == open(tmp, "rb").read()
         if args.check:
-            print(f"  {'ok' if same else 'drifted'} {name} ({rows} rows)")
-            if not same:
+            age_hours = (now - os.path.getmtime(dst)) / 3600 if os.path.exists(dst) else float("inf")
+            fresh = args.no_freshness or age_hours <= args.max_age_hours
+            status = "ok" if same else "drifted"
+            if not fresh:
+                status = "stale"
+            print(
+                f"  {status:8} {name} ({rows} rows, "
+                f"{age_hours:.1f}h since last sync)"
+            )
+            if not same or not fresh:
                 drifted.append(name)
             os.remove(tmp)
             continue
+        # Replace even when the bytes match: the file's mtime records that
+        # this dataset was checked at build time (the --check freshness gate).
+        os.replace(tmp, dst)
         if same:
-            print(f"  ok      {name}")
-            os.remove(tmp)
+            print(f"  ok      {name} ({rows} rows)")
         else:
-            os.replace(tmp, dst)
             print(f"  synced  {name} ({rows} rows)")
 
     if args.check and drifted:
-        print(f"\n{len(drifted)} dataset(s) drifted from the engine repo")
+        print(f"\n{len(drifted)} dataset(s) are stale or drifted from the engine repo")
+        print("run tools/sync_app_assets.py (or build_all.sh) to refresh")
         return 1
     print(f"\nbundled datasets are in sync ({mode} source)")
     return 0

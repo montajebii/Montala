@@ -3,12 +3,15 @@
 #
 #   ./tools/build_all.sh                     # web + linux + android
 #   ./tools/build_all.sh --no-sync --no-pub  # use the current local material
+#   ./tools/build_all.sh --check-only        # dataset gate, no build
 #   ./tools/build_all.sh web linux           # pick targets explicitly
 #
 # Flags:
 #   --no-sync              skip refreshing the bundled datasets
 #   --no-pub               skip `flutter pub get` and build with --no-pub
 #   --allow-debug-signing  package Android artefacts without key.properties
+#   --check-only           verify datasets (24h freshness + source drift),
+#                          run the dataset test, then exit without building
 #
 # Artefacts land in dist/ (and dist/android for the signed AAB + APKs) together
 # with a SHA256SUMS file. Android output is refused unless it is signed with the
@@ -35,16 +38,18 @@ export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flu
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 SYNC=1
 PUB=1
+CHECK_ONLY=0
 ALLOW_DEBUG_SIGNING=0
 TARGETS=()
 for arg in "$@"; do
   case "$arg" in
     --no-sync) SYNC=0 ;;
     --no-pub) PUB=0 ;;
+    --check-only) CHECK_ONLY=1 ;;
     --allow-debug-signing) ALLOW_DEBUG_SIGNING=1 ;;
     -h|--help) usage; exit 0 ;;
     web|linux|android|windows) TARGETS+=("$arg") ;;
@@ -66,6 +71,18 @@ mkdir -p "$DIST"
 # ------------------------------------------------------------ release sanity
 log "Checking version, changelog and tag consistency"
 ( cd "$APP_DIR" && python3 tools/release.py check )
+
+if [[ $CHECK_ONLY -eq 1 ]]; then
+  log "Checking bundled datasets (drift + 24h freshness), no build"
+  ( cd "$APP_DIR" && python3 tools/sync_app_assets.py --check ) || \
+    die "dataset freshness check failed — run tools/sync_app_assets.py"
+  if [[ $PUB -eq 1 ]]; then
+    ( cd "$APP_DIR" && flutter pub get )
+  fi
+  ( cd "$APP_DIR" && flutter test test/dataset_integration_test.dart $PUB_ARG )
+  log "Dataset check passed"
+  exit 0
+fi
 
 if [[ $SYNC -eq 1 ]]; then
   log "Syncing bundled seed datasets from the engine repo"

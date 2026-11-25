@@ -5,8 +5,17 @@
 ///  2. load preferences,
 ///  3. import the bundled CSVs on first run,
 ///  4. show the UI.
+///
+/// Every async step below is bounded by a timeout and wrapped in its own
+/// try/catch. On the web a stalled asset fetch, a blocked storage API or a
+/// plugin that never answers must never keep [runApp] from being called —
+/// otherwise the HTML splash (`در حال آماده‌سازی داده‌ها...`) spins forever
+/// and the `flutter-first-frame` event never fires.
 library;
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -27,8 +36,34 @@ import 'ui/app_scope.dart';
 import 'ui/screens/launcher_screen.dart';
 import 'ui/theme.dart';
 
+/// Set once the root widget is up; keeps the watchdog and a late-arriving
+/// bootstrap result from calling [runApp] a second time.
+bool _didRunApp = false;
+
+/// The startup watchdog, cancelled as soon as any [runApp] call wins.
+Timer? _startupWatchdog;
+
+/// Runs [app] exactly once — the first caller wins, later callers are no-ops.
+void _runAppOnce(Widget app) {
+  _startupWatchdog?.cancel();
+  if (_didRunApp) return;
+  _didRunApp = true;
+  runApp(app);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Watchdog: every awaited startup step has its own timeout, so this should
+  // never fire. But if a Future ever stalls beneath that layer (a plugin that
+  // never answers its channel, a wedged engine), the user still gets a real
+  // screen instead of an endless splash.
+  _startupWatchdog = Timer(const Duration(seconds: 15), () {
+    debugPrint('startup watchdog: bootstrap did not finish within 15s');
+    _runAppOnce(
+      const StartupFailureApp(error: 'startup watchdog: bootstrap exceeded 15s'),
+    );
+  });
 
   // Startup touches the database and the network. If anything throws there, a
   // bare exception would leave the splash screen spinning forever with no
@@ -37,27 +72,58 @@ Future<void> main() async {
     await _bootstrap();
   } catch (error, stack) {
     debugPrint('startup failed: $error\n$stack');
-    runApp(StartupFailureApp(error: error));
+    _runAppOnce(StartupFailureApp(error: error));
   }
 }
 
 Future<void> _bootstrap() async {
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+  // The web engine does not implement orientation locking; on some desktop
+  // browsers the underlying platform channel can stall, so skip it entirely
+  // on the web.
+  if (!kIsWeb) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
 
-  await initDatabaseFactoryForPlatform();
+  try {
+    await initDatabaseFactoryForPlatform().timeout(const Duration(seconds: 3));
+  } catch (error, stack) {
+    debugPrint('db factory init failed (continuing): $error\n$stack');
+  }
 
   final settings = Settings();
-  await settings.load();
+  // Storage can be blocked in some browsers (private mode, sandboxed iframes,
+  // hardened cookie settings) and SharedPreferences.getInstance() can stall
+  // there. Booting with the defaults is always better than not booting; the
+  // preferences simply do not persist for that session.
+  try {
+    await settings.load().timeout(const Duration(seconds: 3));
+  } catch (error, stack) {
+    debugPrint('settings.load failed (using defaults): $error\n$stack');
+  }
 
-  await Importer.importAllIfNeeded();
+  // First-run CSV import. A missing or stalled asset must not take startup
+  // down: the importer already skips bad files itself, and this outer timeout
+  // bounds the whole import so a slow connection boots with partial data
+  // instead of hanging. The launch sync fills any gaps after the first frame.
+  try {
+    await Importer.importAllIfNeeded().timeout(const Duration(seconds: 3));
+  } catch (error, stack) {
+    debugPrint('seed import failed (starting empty): $error\n$stack');
+  }
 
   final history = <String, List<PriceRow>>{};
   for (final symbol in kSymbols) {
-    history[symbol.id] = await AppDb.pricesForSymbol(symbol.id);
+    try {
+      history[symbol.id] = await AppDb.pricesForSymbol(symbol.id)
+          .timeout(const Duration(seconds: 3));
+    } catch (error, stack) {
+      debugPrint('pricesForSymbol(${symbol.id}) failed: $error\n$stack');
+      history[symbol.id] = const <PriceRow>[];
+    }
   }
 
   final calculator = Calculator(history);
@@ -102,7 +168,12 @@ Future<void> _bootstrap() async {
     await updatePrices();
   }
 
-  runApp(
+  // Always reached: every await above is either bounded by a timeout or
+  // wrapped in a try/catch, so data loading can no longer block the first
+  // frame (and the `flutter-first-frame` event that removes the HTML splash).
+  // `history` may be empty after a fully failed import; the UI renders empty
+  // states and the background sync repopulates the data.
+  _runAppOnce(
     MontalaApp(
       settings: settings,
       calculator: calculator,
